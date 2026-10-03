@@ -23,3 +23,14 @@ assets/menagerie_unitree_g1/
 *.onnx
 *.task
 *.mp4
+
+# MHacks game, SpacetimeDB module and iMessage agent
+game/node_modules/
+game/dist/
+game/.env
+agent/node_modules/
+agent/.env
+agent/.agent-state.json
+spacetime/spacetimedb/node_modules/
+spacetime/spacetime.local.json
+spacetime/spacetimedb/dist/

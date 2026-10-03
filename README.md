@@ -2,6 +2,10 @@
 
 Unitree G1 humanoids skiing real Olympic and World Cup pistes in MuJoCo. Type a resort name and the run's real slope becomes a MuJoCo heightfield. A pretrained whole body controller (NVIDIA GEAR-SONIC) keeps the robot moving like a person, and a small policy trained with PPO on thousands of parallel robots teaches it to ski: edge, carve through gates, hold speed and stay upright on terrain it has never seen.
 
+## MHacks 2026: Ground Truth
+
+The hackathon build on top of this repo: ski the real Streif in the browser with your body (webcam pose), with the Unitree G1 copying you, everyone live on one shared mountain through SpacetimeDB, every run growing a motion-on-terrain dataset, and an iMessage agent on Photon that hands out join codes and texts results. See [GAME.md](GAME.md) for what it looks like, how it plays and how to run it (`scripts/dev.sh`). The long version of the idea is in [VISION.md](VISION.md).
+
 ## Results so far
 
 Fixed benchmark: 24 terrain tiles (real course windows and synthetic slopes, 8 to 31 degrees), 12 s per run.
