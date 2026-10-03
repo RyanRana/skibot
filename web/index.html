@@ -24,6 +24,23 @@
   .src a { border-bottom: 1px solid var(--line); }
   .src a:hover { color: var(--ink); }
 
+  section.edge { padding: clamp(80px, 13vh, 130px) 0 0; }
+  .edge h2 { margin-top: 12px; max-width: 20ch; }
+  .edge-lede { margin-top: 16px; max-width: 58ch; color: var(--muted); font-size: clamp(16px, 1.5vw, 18px); }
+  .clips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 32px; }
+  .clip button { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; padding: 0; border: 0; background: #000; cursor: pointer; overflow: hidden; }
+  .clip button img { width: 100%; height: 100%; object-fit: cover; display: block; filter: grayscale(0.35); transition: filter 0.2s; }
+  .clip button:hover img { filter: none; }
+  .clip button::after { content: ""; position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,0.92) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 6.5v11l9-5.5z' fill='%23111315'/%3E%3C/svg%3E") center / 24px no-repeat; }
+  .clip iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; display: block; background: #000; }
+  .clip figcaption { margin-top: 12px; color: var(--muted); font-size: 14px; }
+  .clip figcaption b { display: block; margin-bottom: 4px; font: 500 11px/1.4 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
+  .edge-k { display: block; margin-top: clamp(56px, 9vh, 88px); }
+  .edge .ledger { margin-top: 14px; }
+  .g2s { margin-top: clamp(48px, 8vh, 72px); padding: 28px 0 0; border-top: 1px solid var(--ink); display: grid; grid-template-columns: 1fr 2fr; gap: 24px; }
+  .g2s h3 { font: 400 clamp(26px, 3vw, 34px)/1.1 var(--serif); }
+  .g2s p { color: var(--muted); font-size: 16px; max-width: 62ch; }
+
   section.use { padding: clamp(72px, 12vh, 120px) 0 0; }
   .links { margin-top: 28px; border-top: 1px solid var(--ink); }
   .links a {
@@ -75,7 +92,7 @@
   .next span.now { color: var(--ink); border-color: var(--ink); }
 
   @media (max-width: 820px) {
-    .demos, .ledger, .steps { grid-template-columns: 1fr; }
+    .demos, .ledger, .steps, .clips, .g2s { grid-template-columns: 1fr; }
     .ledger > div, .ledger > div + div { padding: 18px 0; border-left: 0; border-bottom: 1px solid var(--line); }
     .links a { grid-template-columns: 1fr auto; gap: 6px 16px; }
     .links a span { grid-column: 1; grid-row: 2; }
@@ -120,6 +137,55 @@
       </div>
     </div>
     <p class="src">Sources: <a href="https://www.bas-rhin.gouv.fr/index.php/contenu/telechargement/52790/384286/file/dossier-de-presse-pr-vention-hiver-2023-4943.pdf" target="_blank" rel="noopener">French government winter prevention kit, 2023</a> · <a href="https://datawrapper.dwcdn.net/6ePtP/3/" target="_blank" rel="noopener">NPS incidents, 2017</a> · <a href="https://backcountrymagazine.com/stories/in-relatively-average-season-for-avalanche-deaths-across-u-s-colorado-approaches-record-number-of-fatalities/" target="_blank" rel="noopener">CAIC ten-year average</a></p>
+  </section>
+
+  <section class="edge" id="edge">
+    <span class="k">Why robots fall</span>
+    <h2>Robots doing complex tasks fail on the edge cases.</h2>
+    <p class="edge-lede">A demo shows the run that worked. Deployment is everything else: a slick floor, a kitchen the robot has never seen, a shove nobody planned for. Every lab is fighting the same long tail.</p>
+
+    <div class="clips">
+      <figure class="clip">
+        <button data-yt="OQ1zWbV-X24" data-start="0" aria-label="Play: Tesla Optimus falls at the Miami event">
+          <img src="https://i.ytimg.com/vi/OQ1zWbV-X24/hqdefault.jpg" alt="" loading="lazy">
+        </button>
+        <figcaption><b>Tesla · December 2025</b>Optimus drops water bottles and falls backward at Tesla's Miami event.</figcaption>
+      </figure>
+      <figure class="clip">
+        <button data-yt="Zn8yMaepzVk" data-start="12" aria-label="Play: Physical Intelligence on robots and new environments">
+          <img src="https://i.ytimg.com/vi/Zn8yMaepzVk/hqdefault.jpg" alt="" loading="lazy">
+        </button>
+        <figcaption><b>Physical Intelligence · 2025</b>In their own words: robots "can only operate in environments they've been trained in." π0.5 is their first step toward changing that.</figcaption>
+      </figure>
+      <figure class="clip">
+        <button data-yt="lC1M_Zaje9o" data-start="52" aria-label="Play: Skild AI robustness reel">
+          <img src="https://i.ytimg.com/vi/lC1M_Zaje9o/hqdefault.jpg" alt="" loading="lazy">
+        </button>
+        <figcaption><b>Skild AI · 2025</b>Their launch reel is a run of edge cases: kicks, shoves, a broken ankle. Every one had to be trained for.</figcaption>
+      </figure>
+    </div>
+
+    <span class="k edge-k">The data scramble</span>
+    <div class="ledger">
+      <div>
+        <div class="v">$48/hr</div>
+        <div class="d">what Tesla pays people to wear motion-capture suits and walk test routes all day</div>
+      </div>
+      <div>
+        <div class="v">100,000+</div>
+        <div class="d">homes Figure gained access to through Brookfield, to film people living in them</div>
+      </div>
+      <div>
+        <div class="v">100,000 yrs</div>
+        <div class="d">how far robot data trails the data behind today's AI models, by UC Berkeley's estimate</div>
+      </div>
+    </div>
+    <p class="src">Sources: <a href="https://iotworldtoday.com/robotics/tesla-pays-48-an-hour-for-motion-capture-to-develop-humanoid-robot" target="_blank" rel="noopener">Tesla job posting, via IoT World Today</a> · <a href="https://www.figure.ai/news/project-go-big" target="_blank" rel="noopener">Figure, Project Go-Big</a> · <a href="https://vcresearch.berkeley.edu/news/are-we-truly-verge-humanoid-robot-revolution" target="_blank" rel="noopener">Ken Goldberg, Science Robotics 2025</a></p>
+
+    <div class="g2s">
+      <h3>Ground to skill</h3>
+      <p>Edge cases live where the ground changes: ice under fresh snow, loose scree, a 35° pitch, a root across the trail. We record people moving over exactly that ground, rebuild the same ground in physics, train the robot there, and send it back to wherever it still falls. Every fall tells us what to record next, so the data goes straight at the long tail instead of more of the easy middle.</p>
+    </div>
   </section>
 
   <section class="use" id="use">
@@ -216,6 +282,15 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
     else if (a.classList.contains("with-video")) { a.querySelector("em").remove(); }
     else { a.classList.add("pending"); a.querySelector("em").textContent = "SOON"; }
   });
+  // Clips load YouTube only when clicked.
+  document.querySelectorAll(".clip button[data-yt]").forEach(b => b.addEventListener("click", () => {
+    const f = document.createElement("iframe");
+    f.src = `https://www.youtube-nocookie.com/embed/${b.dataset.yt}?autoplay=1&start=${b.dataset.start || 0}&rel=0`;
+    f.allow = "autoplay; encrypted-media; picture-in-picture";
+    f.allowFullscreen = true;
+    f.title = b.getAttribute("aria-label");
+    b.replaceWith(f);
+  }));
 </script>
 </body>
 </html>
