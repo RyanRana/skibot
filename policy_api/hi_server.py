@@ -1,0 +1,185 @@
+"""Hazard Intelligence policy server.
+
+Serves trained runtime policies the way Physical Intelligence's openpi serves pi0: a websocket that sends the
+policy's metadata on connect, then answers each msgpack-numpy observation with an action, so openpi_client's
+WebsocketClientPolicy works against it unchanged. Plain HTTP endpoints sit next to it for curl and browsers, and
+every policy can be downloaded as ONNX to run inside your own physics loop at full rate.
+
+    uvicorn hi_server:app --port 8000          # from policy_api/, needs fastapi uvicorn numpy msgpack
+
+  GET  /v1/policies                  list
+  GET  /v1/policies/{id}             observation and action layout, control rate, benchmark, provenance
+  GET  /v1/policies/{id}/onnx        runtime policy for local inference
+  GET  /v1/policies/{id}/weights     the same network as numpy arrays (npz)
+  POST /v1/policies/{id}/infer       {"obs": [...] or [[...], ...]} -> {"actions": ...}
+  WS   /v1/policies/{id}/ws          openpi protocol: metadata, then {"obs": array} -> {"actions": array}
+  WS   /                             same, default policy (or ?policy=<id>), so openpi_client can point at the host
+"""
+from __future__ import annotations
+
+import functools
+import json
+import os
+import time
+import traceback
+from pathlib import Path
+
+import msgpack
+import numpy as np
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+POLICY_DIR = Path(os.environ.get("HI_POLICY_DIR", Path(__file__).parent / "policies"))
+DEFAULT_POLICY = os.environ.get("HI_DEFAULT_POLICY", "g1-ski")
+
+
+# msgpack-numpy, byte-compatible with openpi_client.msgpack_numpy.
+def _pack_array(obj):
+    if isinstance(obj, np.ndarray):
+        if obj.dtype.kind in ("V", "O", "c"):
+            raise ValueError(f"unsupported dtype {obj.dtype}")
+        return {b"__ndarray__": True, b"data": obj.tobytes(), b"dtype": obj.dtype.str, b"shape": obj.shape}
+    if isinstance(obj, np.generic):
+        return {b"__npgeneric__": True, b"data": obj.item(), b"dtype": obj.dtype.str}
+    return obj
+
+
+def _unpack_array(obj):
+    if b"__ndarray__" in obj:
+        return np.ndarray(buffer=obj[b"data"], dtype=np.dtype(obj[b"dtype"]), shape=obj[b"shape"])
+    if b"__npgeneric__" in obj:
+        return np.dtype(obj[b"dtype"]).type(obj[b"data"])
+    return obj
+
+
+packb = functools.partial(msgpack.packb, default=_pack_array)
+unpackb = functools.partial(msgpack.unpackb, object_hook=_unpack_array)
+
+
+class Policy:
+    """Normalizer + ELU MLP in numpy: the rsl_rl actor's deterministic mean action."""
+
+    def __init__(self, d: Path):
+        self.dir = d
+        self.meta = json.loads((d / "meta.json").read_text())
+        w = np.load(d / "weights.npz")
+        self.mean, self.std, self.eps = w["mean"], w["std"], float(w["eps"])
+        self.layers = [(w[f"W{k}"].T.copy(), w[f"b{k}"]) for k in range(4)]
+        self.obs_dim = self.meta["obs_dim"]
+        self.clip = self.meta["action"]["clip"]
+
+    def infer(self, obs: dict) -> dict:
+        x = np.asarray(obs["obs"] if isinstance(obs, dict) else obs, dtype=np.float32)
+        single = x.ndim == 1
+        x = np.atleast_2d(x)
+        if x.shape[1] != self.obs_dim:
+            raise ValueError(f"{self.meta['id']} expects obs of size {self.obs_dim}, got {x.shape[1]}")
+        h = (np.nan_to_num(x, nan=0.0, posinf=10.0, neginf=-10.0) - self.mean) / (self.std + self.eps)
+        for k, (W, b) in enumerate(self.layers):
+            h = h @ W + b
+            if k < 3:
+                h = np.where(h > 0, h, np.expm1(np.minimum(h, 0)))
+        a = np.clip(h, *self.clip).astype(np.float32)
+        return {"actions": a[0] if single else a}
+
+
+POLICIES = {p.name: Policy(p) for p in sorted(POLICY_DIR.iterdir()) if (p / "meta.json").exists()}
+
+app = FastAPI(title="Hazard Intelligence policy API", version="0.1")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+def get(pid: str) -> Policy:
+    if pid not in POLICIES:
+        raise HTTPException(404, f"no policy {pid!r}; have {sorted(POLICIES)}")
+    return POLICIES[pid]
+
+
+@app.get("/")
+def root():
+    return {"service": "hazard-intelligence-policy", "policies": sorted(POLICIES), "default": DEFAULT_POLICY,
+            "docs": "/docs", "websocket": "/v1/policies/{id}/ws (openpi protocol)"}
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
+
+
+@app.get("/v1/policies")
+def list_policies():
+    keys = ("id", "name", "robot", "skill", "obs_dim", "action_dim", "control_hz", "benchmark")
+    return [{k: p.meta[k] for k in keys} for p in POLICIES.values()]
+
+
+@app.get("/v1/policies/{pid}")
+def policy_meta(pid: str):
+    return get(pid).meta
+
+
+@app.get("/v1/policies/{pid}/onnx")
+def policy_onnx(pid: str):
+    return FileResponse(get(pid).dir / "policy.onnx", media_type="application/octet-stream", filename=f"{pid}.onnx")
+
+
+@app.get("/v1/policies/{pid}/weights")
+def policy_weights(pid: str):
+    return FileResponse(get(pid).dir / "weights.npz", media_type="application/octet-stream", filename=f"{pid}.npz")
+
+
+class InferRequest(BaseModel):
+    obs: list[float] | list[list[float]]
+
+
+@app.post("/v1/policies/{pid}/infer")
+def policy_infer(pid: str, req: InferRequest):
+    p = get(pid)
+    t0 = time.perf_counter()
+    try:
+        out = p.infer({"obs": req.obs})
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"policy": pid, "actions": out["actions"].tolist(), "server_timing": {"infer_ms": (time.perf_counter() - t0) * 1e3}}
+
+
+async def _serve_ws(ws: WebSocket, p: Policy):
+    await ws.accept()
+    await ws.send_bytes(packb(p.meta))
+    prev_total = None
+    while True:
+        try:
+            t0 = time.monotonic()
+            obs = unpackb(await ws.receive_bytes())
+            t1 = time.monotonic()
+            out = p.infer(obs)
+            timing = {"infer_ms": (time.monotonic() - t1) * 1e3}
+            if prev_total is not None:
+                timing["prev_total_ms"] = prev_total * 1e3
+            out["server_timing"] = timing
+            await ws.send_bytes(packb(out))
+            prev_total = time.monotonic() - t0
+        except WebSocketDisconnect:
+            return
+        except Exception:
+            await ws.send_text(traceback.format_exc())
+            await ws.close(code=1011)
+            return
+
+
+@app.websocket("/v1/policies/{pid}/ws")
+async def policy_ws(ws: WebSocket, pid: str):
+    if pid not in POLICIES:
+        await ws.close(code=4404)
+        return
+    await _serve_ws(ws, POLICIES[pid])
+
+
+@app.websocket("/")
+async def root_ws(ws: WebSocket):
+    pid = ws.query_params.get("policy", DEFAULT_POLICY)
+    if pid not in POLICIES:
+        await ws.close(code=4404)
+        return
+    await _serve_ws(ws, POLICIES[pid])

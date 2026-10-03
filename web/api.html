@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model API</title>
+<meta name="description" content="Pull a trained Hazard Intelligence policy and run it in your own physics loop.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<style>
+  main { max-width: 720px; padding: clamp(40px, 9vh, 96px) 0 0; }
+  .lede { max-width: 52ch; }
+  .host { margin-top: 28px; font: 400 13px/1.6 var(--mono); color: var(--muted); word-break: break-all; cursor: copy; }
+  .host b { font-weight: 500; color: var(--ink); }
+
+  section { margin-top: clamp(56px, 9vh, 88px); }
+  h2 { font-size: clamp(26px, 3vw, 34px); }
+  section > p { margin-top: 12px; color: var(--muted); }
+  section > p a { color: var(--ink); border-bottom: 1px solid var(--line); }
+  section > p a:hover { border-color: var(--ink); }
+
+  pre { margin-top: 20px; padding: 20px 22px; border: 1px solid var(--line); overflow-x: auto; font: 400 13px/1.75 var(--mono); }
+  pre .c { color: var(--faint); }
+
+  .ref { margin-top: 24px; border-top: 1px solid var(--ink); }
+  .ref > div { padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .sig { font: 500 14px/1.5 var(--mono); }
+  .sig em { font-style: normal; font-weight: 400; color: var(--muted); }
+  .ref p { margin-top: 8px; color: var(--muted); font-size: 15px; max-width: 60ch; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 15px; }
+  th { text-align: left; padding: 0 16px 10px 0; font: 500 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--ink); }
+  td { padding: 14px 16px 14px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.m { font: 400 13px/1.5 var(--mono); white-space: nowrap; }
+  td.d { color: var(--muted); }
+  .scroll { overflow-x: auto; }
+
+  .back { display: inline-block; margin: clamp(64px, 10vh, 110px) 0 48px; font: 500 14px/1 var(--sans); border-bottom: 1px solid var(--ink); padding-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="index.html">Hi.</a>
+    <nav class="nav"><a href="how.html">How it works</a><a href="index.html#use">Data collection</a><a class="on" href="api.html">API</a></nav>
+  </header>
+
+  <main>
+    <h1>Model API</h1>
+    <p class="lede">One robot, zero-shot. Pull a trained policy and run it inside your own physics loop. Nothing to train on your side.</p>
+    <p class="host" id="host" title="Click to copy"><b>Host</b>&nbsp; https://ryanrana04--hazard-intelligence-api-api.modal.run</p>
+
+    <section>
+      <h2>Usage</h2>
+      <p>The client downloads the policy once and runs it locally, so nothing touches the network inside your control loop. <a href="hi_client.py" download>Download hi_client.py</a></p>
+<pre><span class="c"># pip install numpy onnxruntime</span>
+from hi_client import pull
+
+policy = pull(HOST, "g1-ski")
+actions = policy.infer(obs)</pre>
+    </section>
+
+    <section>
+      <h2>Reference</h2>
+      <div class="ref">
+        <div>
+          <div class="sig">pull(host, policy="g1-ski") <em>→ Policy</em></div>
+          <p>Fetches the policy's spec and ONNX file once, caches them under ~/.cache/hi, and returns a Policy that runs on your CPU.</p>
+        </div>
+        <div>
+          <div class="sig">Policy.infer(obs) <em>→ actions</em></div>
+          <p>One flat observation in, 31 actions out, every 20 ms. Takes a single vector or a batch. Actions 0 and 1 set the body's lean; 2 to 30 nudge the 29 joints. Both feed NVIDIA's SONIC controller, which drives the motors.</p>
+        </div>
+        <div>
+          <div class="sig">Policy.meta <em>→ dict</em></div>
+          <p>Everything needed to wire it up: the architecture, the name and position of every input, the action layout and scales, the control rate, and where the checkpoint came from.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Policies</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>Name</th><th>Inputs → outputs</th><th>Benchmark</th></tr></thead>
+        <tbody>
+          <tr><td class="m">g1-ski</td><td class="m">141 → 31</td><td class="d">19 of 24 test slopes without a fall</td></tr>
+          <tr><td class="m">g1-ski-trees</td><td class="m">156 → 31</td><td class="d">adds tree avoidance; not scored yet</td></tr>
+        </tbody>
+      </table></div>
+      <p>Both are a small network (four layers, 241k parameters) trained in simulation for the Unitree G1.</p>
+    </section>
+
+    <section>
+      <h2>HTTP</h2>
+      <p>For languages without the client, or to call the policy remotely.</p>
+      <div class="scroll"><table>
+        <tbody>
+          <tr><td class="m">GET /v1/policies</td><td class="d">List of policies</td></tr>
+          <tr><td class="m">GET /v1/policies/{id}</td><td class="d">The full spec, same as Policy.meta</td></tr>
+          <tr><td class="m">GET /v1/policies/{id}/onnx</td><td class="d">The runtime file</td></tr>
+          <tr><td class="m">POST /v1/policies/{id}/infer</td><td class="d">{"obs": [...]} in, {"actions": [...]} out</td></tr>
+          <tr><td class="m">WS /v1/policies/{id}/ws</td><td class="d">Streaming inference over a websocket</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <a class="back" href="index.html#use">← Back</a>
+  </main>
+
+  <footer>
+    <p>Trained in simulation. The policies steer NVIDIA GEAR-SONIC (NVIDIA Open Model License), which is not served here. The G1 model is Unitree's (Apache 2.0).</p>
+    <span class="mono">Hazard Intelligence · MHacks 2026</span>
+  </footer>
+</div>
+<script>
+  const host = document.getElementById("host");
+  host.onclick = () => navigator.clipboard?.writeText(host.textContent.replace("Host", "").trim());
+</script>
+</body>
+</html>
