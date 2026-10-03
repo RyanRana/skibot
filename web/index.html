@@ -28,11 +28,8 @@
   .edge h2 { margin-top: 12px; max-width: 20ch; }
   .edge-lede { margin-top: 16px; max-width: 58ch; color: var(--muted); font-size: clamp(16px, 1.5vw, 18px); }
   .clips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 32px; }
-  .clip button { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; padding: 0; border: 0; background: #000; cursor: pointer; overflow: hidden; }
-  .clip button img { width: 100%; height: 100%; object-fit: cover; display: block; filter: grayscale(0.35); transition: filter 0.2s; }
-  .clip button:hover img { filter: none; }
-  .clip button::after { content: ""; position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,0.92) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 6.5v11l9-5.5z' fill='%23111315'/%3E%3C/svg%3E") center / 24px no-repeat; }
-  .clip iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; display: block; background: #000; }
+  .clip img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--panel); }
+  .edge-lede a.q { color: var(--ink); border-bottom: 1px solid var(--line); }
   .clip figcaption { margin-top: 12px; color: var(--muted); font-size: 14px; }
   .clip figcaption b { display: block; margin-bottom: 4px; font: 500 11px/1.4 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
   .edge-k { display: block; margin-top: clamp(56px, 9vh, 88px); }
@@ -147,29 +144,53 @@
     <p class="src">Sources: <a href="https://www.bas-rhin.gouv.fr/index.php/contenu/telechargement/52790/384286/file/dossier-de-presse-pr-vention-hiver-2023-4943.pdf" target="_blank" rel="noopener">French government winter prevention kit, 2023</a> · <a href="https://datawrapper.dwcdn.net/6ePtP/3/" target="_blank" rel="noopener">NPS incidents, 2017</a> · <a href="https://backcountrymagazine.com/stories/in-relatively-average-season-for-avalanche-deaths-across-u-s-colorado-approaches-record-number-of-fatalities/" target="_blank" rel="noopener">CAIC ten-year average</a></p>
   </section>
 
+  <section class="use" id="use">
+    <h2>Data collection</h2>
+
+    <div class="use-block">
+      <span class="k">Three ways in</span>
+      <div class="links">
+        <a data-link="video" class="with-video"><b>Train from videos</b><span>Paste any ski or hike video. We pull the body motion out and the robot learns from it.</span><em>→</em>
+          <video src="media/video_train.mp4" poster="media/video_train.jpg" autoplay muted loop playsinline aria-label="A GoPro ski run with 3D pose on the left and the G1 copying the same carve on the right"></video></a>
+        <a data-link="game"><b>Train from gameplay</b><span>Ski in front of your webcam. Your motion capture becomes training data, and the robot copies you live.</span><em>→</em></a>
+        <a data-link="phone"><b>Train from your iPhone</b><span>Text to opt in. Your phone quietly records motion and GPS on every run and hike.</span><em>→</em></a>
+      </div>
+    </div>
+
+    <div class="use-block">
+      <span class="k">Run it · one robot, zero-shot</span>
+      <a class="api" href="api.html">
+        <div>
+          <b>Model API</b>
+          <span>Pull a trained policy, architecture and weights included, and run it in your own physics loop at 50 Hz. No training on your side.</span>
+          <em>Read the docs →</em>
+        </div>
+<pre><code><i>from</i> hi_client <i>import</i> pull
+
+HOST = <s>"<span id="api-host">api host</span>"</s>
+policy = pull(HOST, <s>"g1-ski"</s>)
+actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
+      </a>
+    </div>
+  </section>
+
   <section class="edge" id="edge">
     <span class="k">Why robots fall</span>
     <h2>Robots doing complex tasks fail on the edge cases.</h2>
-    <p class="edge-lede">A demo shows the run that worked. Deployment is everything else: a slick floor, a kitchen the robot has never seen, a shove nobody planned for. Every lab is fighting the same long tail.</p>
+    <p class="edge-lede">A demo shows the run that worked. Deployment is everything else: a slick floor, a kitchen the robot has never seen, a shove nobody planned for. Physical Intelligence says it plainly: robots <a class="q" href="https://www.youtube.com/watch?v=Zn8yMaepzVk&t=12s" target="_blank" rel="noopener">"can only operate in environments they've been trained in."</a></p>
 
     <div class="clips">
       <figure class="clip">
-        <button data-yt="OQ1zWbV-X24" data-start="0" aria-label="Play: Tesla Optimus falls at the Miami event">
-          <img src="https://i.ytimg.com/vi/OQ1zWbV-X24/hqdefault.jpg" alt="" loading="lazy">
-        </button>
-        <figcaption><b>Tesla · December 2025</b>Optimus drops water bottles and falls backward at Tesla's Miami event.</figcaption>
+        <img src="media/fail-sprint.gif" alt="A humanoid sprinting on a track veers into the barrier and falls apart" loading="lazy">
+        <figcaption><b>Sprint race · Beijing</b>A humanoid running the track drifts out of its lane and crashes into the wall.</figcaption>
       </figure>
       <figure class="clip">
-        <button data-yt="Zn8yMaepzVk" data-start="12" aria-label="Play: Physical Intelligence on robots and new environments">
-          <img src="https://i.ytimg.com/vi/Zn8yMaepzVk/hqdefault.jpg" alt="" loading="lazy">
-        </button>
-        <figcaption><b>Physical Intelligence · 2025</b>In their own words: robots "can only operate in environments they've been trained in." π0.5 is their first step toward changing that.</figcaption>
+        <img src="media/fail-atlas.gif" alt="Boston Dynamics Atlas misses landings on a parkour course" loading="lazy">
+        <figcaption><b>Boston Dynamics Atlas</b>Misses a landing on the parkour course and goes down hard.</figcaption>
       </figure>
       <figure class="clip">
-        <button data-yt="lC1M_Zaje9o" data-start="52" aria-label="Play: Skild AI robustness reel">
-          <img src="https://i.ytimg.com/vi/lC1M_Zaje9o/hqdefault.jpg" alt="" loading="lazy">
-        </button>
-        <figcaption><b>Skild AI · 2025</b>Their launch reel is a run of edge cases: kicks, shoves, a broken ankle. Every one had to be trained for.</figcaption>
+        <img src="media/fail-soccer.gif" alt="A soccer humanoid swings at the ball and falls over" loading="lazy">
+        <figcaption><b>Robot soccer</b>Winds up to kick and falls over before reaching the ball.</figcaption>
       </figure>
     </div>
 
@@ -206,36 +227,6 @@
     <div class="g2s">
       <h3>Ground to skill</h3>
       <p>Edge cases live where the ground changes: ice under fresh snow, loose scree, a 35° pitch, a root across the trail. We record people moving over exactly that ground, rebuild the same ground in physics, train the robot there, and send it back to wherever it still falls. Every fall tells us what to record next, so the data goes straight at the long tail instead of more of the easy middle.</p>
-    </div>
-  </section>
-
-  <section class="use" id="use">
-    <h2>Data collection</h2>
-
-    <div class="use-block">
-      <span class="k">Three ways in</span>
-      <div class="links">
-        <a data-link="video" class="with-video"><b>Train from videos</b><span>Paste any ski or hike video. We pull the body motion out and the robot learns from it.</span><em>→</em>
-          <video src="media/video_train.mp4" poster="media/video_train.jpg" autoplay muted loop playsinline aria-label="A GoPro ski run with 3D pose on the left and the G1 copying the same carve on the right"></video></a>
-        <a data-link="game"><b>Train from gameplay</b><span>Ski in front of your webcam. Your motion capture becomes training data, and the robot copies you live.</span><em>→</em></a>
-        <a data-link="phone"><b>Train from your iPhone</b><span>Text to opt in. Your phone quietly records motion and GPS on every run and hike.</span><em>→</em></a>
-      </div>
-    </div>
-
-    <div class="use-block">
-      <span class="k">Run it · one robot, zero-shot</span>
-      <a class="api" href="api.html">
-        <div>
-          <b>Model API</b>
-          <span>Pull a trained policy, architecture and weights included, and run it in your own physics loop at 50 Hz. No training on your side.</span>
-          <em>Read the docs →</em>
-        </div>
-<pre><code><i>from</i> hi_client <i>import</i> pull
-
-HOST = <s>"<span id="api-host">api host</span>"</s>
-policy = pull(HOST, <s>"g1-ski"</s>)
-actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
-      </a>
     </div>
   </section>
 
@@ -303,15 +294,6 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
     else if (a.classList.contains("with-video")) { a.querySelector("em").remove(); }
     else { a.classList.add("pending"); a.querySelector("em").textContent = "SOON"; }
   });
-  // Clips load YouTube only when clicked.
-  document.querySelectorAll(".clip button[data-yt]").forEach(b => b.addEventListener("click", () => {
-    const f = document.createElement("iframe");
-    f.src = `https://www.youtube-nocookie.com/embed/${b.dataset.yt}?autoplay=1&start=${b.dataset.start || 0}&rel=0`;
-    f.allow = "autoplay; encrypted-media; picture-in-picture";
-    f.allowFullscreen = true;
-    f.title = b.getAttribute("aria-label");
-    b.replaceWith(f);
-  }));
 </script>
 </body>
 </html>
