@@ -41,6 +41,8 @@ Ski physics checks on a rigid test sled against closed form answers:
 ```
 resort.py, course.py      any resort to a MuJoCo course (OSM + elevation)
 gopro.py                  GoPro IMU/GPS ski runs (Zenodo) matched to the terrain
+ground/                   Ground Truth: phone recorder server, trail registration, Photon iMessage agent (see ground/README.md)
+ios/GroundTruth/          iOS app that records a hike in the background and uploads it
 build_resorts.sh          builds a list of courses
 skisim/                   ski physics, terrain, scenes, SONIC, perturbation, fleet renders, pose from video
 skisim/tests/             physics and controller checks

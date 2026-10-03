@@ -23,3 +23,9 @@ assets/menagerie_unitree_g1/
 *.onnx
 *.task
 *.mp4
+
+# Ground Truth: node deps, generated Xcode project, local signing team
+ground/agent/node_modules/
+ios/GroundTruth/GroundTruth.xcodeproj/
+ios/GroundTruth/Local.xcconfig
+ios/GroundTruth/build/

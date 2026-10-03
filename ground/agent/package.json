@@ -1,0 +1,12 @@
+{
+  "name": "ground-truth-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node agent.mjs"
+  },
+  "dependencies": {
+    "@photon-ai/imessage-kit": "^3.0.0",
+    "better-sqlite3": "^13.0.3"
+  }
+}

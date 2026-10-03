@@ -1,0 +1,40 @@
+# Ground Truth iOS recorder. Generate the Xcode project with:  cd ios/GroundTruth && ./setup.sh
+name: GroundTruth
+options:
+  bundleIdPrefix: com.ygadipalli
+  deploymentTarget:
+    iOS: "17.0"
+configFiles:
+  Debug: Local.xcconfig
+  Release: Local.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  GroundTruth:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(GT_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_CFBundleDisplayName: ground truth
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: ground truth
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIBackgroundModes: [location]
+        NSLocationWhenInUseUsageDescription: "ground truth records your path during a hike you start, so your motion can be tied to the trail under you."
+        NSLocationAlwaysAndWhenInUseUsageDescription: "ground truth keeps recording your path while your phone is locked, until you end the hike."
+        NSMotionUsageDescription: "ground truth uses the barometer and step counter to measure climb and cadence during your hike."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.ygadipalli.groundtruth
+            CFBundleURLSchemes: [groundtruth]
