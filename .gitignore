@@ -1,0 +1,25 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# Environments
+.venv/
+.venv-train/
+
+# Downloaded data, caches, renders and generated courses (rebuild with the scripts)
+data/
+out/
+
+# Training runs and logs
+runs/
+runs_*/
+runs_*.log
+
+# Third-party weights, fetched by scripts/fetch_assets.sh
+assets/sonic/
+assets/pose/
+assets/menagerie_unitree_g1/
+*.pt
+*.onnx
+*.task
+*.mp4
