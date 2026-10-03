@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node agent.mjs"
+    "start": "node agent.mjs",
+    "chat": "node agent.mjs --terminal",
+    "test": "node test.mjs"
   },
   "dependencies": {
-    "@photon-ai/imessage-kit": "^3.0.0",
-    "better-sqlite3": "^13.0.3"
+    "spectrum-ts": "^12.10.1"
   }
 }

@@ -1,6 +1,6 @@
 # Ground Truth phone recorder
 
-A hiker opts in over iMessage and records a hike with the ground truth iOS app, which keeps recording with the screen locked. At the end the app uploads the hike. The server ties it to the ground under it, and the Photon agent texts back a summary.
+A hiker opts in over iMessage and records a hike with the ground truth iOS app, which keeps recording with the screen locked. At the end the app uploads the hike. The server ties it to the ground under it, and the Photon agent texts back a summary, then asks about the trail and files the answer on that hike.
 
 ```
 photon agent (ground/agent)  --text with link-->  hiker's iPhone
@@ -38,14 +38,19 @@ One-time setup:
 4. `cd ios/GroundTruth && ./setup.sh && open GroundTruth.xcodeproj`. Pick your iPhone and press run.
    - On first launch, trust the developer under Settings → General → VPN & Device Management.
    - If Xcode says the bundle id is taken, use `GT_BUNDLE_ID=com.<you>.groundtruth ./setup.sh`.
-5. In `ground/agent`, run `npm install`. Then give your terminal app Full Disk Access (System Settings → Privacy & Security), because Photon's kit reads the Messages database.
+5. Agent:
+   - In `ground/agent`, run `npm install`, then `cp .env.example .env`.
+   - Fill in `SPECTRUM_PROJECT_ID` and `SPECTRUM_PROJECT_SECRET` from your project settings at app.photon.codes.
+   - Fill in `XAI_API_KEY` for Grok. Without it, replies are scripted, and the agent prints a warning at startup.
 
 Each session:
 
 ```bash
 ground/run.sh                                  # https tunnel + server, prints the public url; dashboard at http://127.0.0.1:8770
-cd ground/agent && node agent.mjs              # Photon agent: replies to "hike" texts with the link, sends summaries
-node agent.mjs invite +1XXXXXXXXXX             # or text one person the link right now
+cd ground/agent && npm start                   # the agent on iMessage through Photon Spectrum
+npm run chat                                   # same agent in this terminal, no Photon account needed
+node agent.mjs nudge +1XXXXXXXXXX              # text someone "heading out? record this one" with their link
+npm test                                       # checks the conversation against the running server
 ```
 
 No Photon yet? Open the app's "testing" field, paste the public url and tap "get a test invite".
@@ -54,8 +59,30 @@ The tunnel address changes every time `run.sh` starts. New invites carry the new
 
 ## Checks
 
+- **On a real phone:** follow [PHONE_TEST.md](PHONE_TEST.md), eight short recordings. Then `python -m ground.validate ...` checks the sensor numbers against known answers (rest noise and drift, 100 counted steps, 3 turns, a known distance). `python -m ground.validate report` turns the results into one table.
+
 - **Simulator, end to end:** `-GTAutopilot <s> -GTJoin <link>` launch arguments (debug builds only) run consent → record → end → upload with no taps. Feed it a walk with `xcrun simctl location <sim> start ...`. The simulator has no motion sensors or barometer, and the app shows that in red.
 - **On the phone:**
   1. Start, lock, pocket, walk 15 min, then unlock.
   2. Motion samples should keep climbing at about 100 per second, and gaps should read "none".
   3. Hold to end. The dashboard should show the session as done, and the summary text should arrive.
+
+## The agent (ground/agent)
+
+It runs on Photon Spectrum (`spectrum-ts`). On the free and Pro plans, people text a number from Photon's shared pool. The Business plan gets one dedicated number. Spectrum allows 50 new conversations per line per day.
+
+- **Who it can text.** We only text people who texted us first, or who were nudged after opting in. Their iMessage handle comes from their message, so the agent has the number before it ever writes to them.
+- **What it does.**
+  - Explains ground truth.
+  - Sends each person their own app link.
+  - Answers questions about their hikes, using only numbers from the server.
+  - Remembers facts about them across conversations.
+  - After every hike, sends the summary and asks how the ground was. The answer is filed as a label on that hike, in `labels.json` in the session folder.
+- **Stop and delete are plain code, not the model.**
+  - "stop" blocks every outbound text until they text "start".
+  - "delete my data" needs an explicit yes, then removes their hikes, invites and messages from the server.
+- **Files.**
+  - Memory lives in `out/ground/agent_state.json`.
+  - `brain.mjs` holds the conversation and the Grok tools.
+  - `agent.mjs` is the Spectrum transport and the outbox sender.
+  - `server.mjs` calls `ground/server.py`.

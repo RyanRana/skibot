@@ -29,3 +29,4 @@ ground/agent/node_modules/
 ios/GroundTruth/GroundTruth.xcodeproj/
 ios/GroundTruth/Local.xcconfig
 ios/GroundTruth/build/
+ground/agent/.env

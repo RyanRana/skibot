@@ -11,7 +11,13 @@ agent sends from.
                                         the session is finalized once all of them are here
 - GET  /api/session/<id>                status and summary
 - GET  /api/outbox, POST /api/outbox/<id>/sent|failed   messages waiting for the Photon agent
-- GET  /                                dashboard (dashboard and outbox answer only on this Mac, not the tunnel)
+- GET  /api/user/<phone>                that person's hikes (the agent answers "how did my hike go" from this)
+- POST /api/trigger {phone}             new invite + a "want to record this one?" text (later: the app's geofence)
+- POST /api/label {session, text}       something the hiker told the agent about a hike ("slipped near the creek")
+- POST /api/delete {phone}              removes that person's hikes, invites and messages
+- GET  /                                dashboard
+Everything that touches phone numbers (dashboard, outbox, user, trigger, label, delete) answers only on this Mac,
+never through the tunnel.
 """
 from __future__ import annotations
 
@@ -62,16 +68,78 @@ def new_invite(phone: str | None) -> dict:
         return {"token": token, **inv[token]}
 
 
-def enqueue(to: str | None, text: str, session: str | None = None) -> dict | None:
+def enqueue(to: str | None, text: str, session: str | None = None, kind: str = "summary") -> dict | None:
+    """kind: "summary" (hike registered, the agent follows up with a question) or "nudge" (invite to record)."""
     if not to:
         return None
     with LOCK:
         box = _load("outbox.json", [])
-        msg = {"id": secrets.token_hex(6), "to": to, "text": text, "session": session, "status": "pending",
-               "created": time.time()}
+        msg = {"id": secrets.token_hex(6), "to": to, "text": text, "session": session, "kind": kind,
+               "status": "pending", "created": time.time()}
         box.append(msg)
         _save("outbox.json", box)
         return msg
+
+
+def same_phone(a: str | None, b: str | None) -> bool:
+    """+1 (919) 555-0123, 19195550123 and +19195550123 are one person; emails compare case-insensitively."""
+    if not a or not b:
+        return False
+    if "@" in a or "@" in b:
+        return a.strip().lower() == b.strip().lower()
+    da, db = re.sub(r"\D", "", a), re.sub(r"\D", "", b)
+    return da == db or (len(da) >= 10 and len(db) >= 10 and da[-10:] == db[-10:])
+
+
+def tokens_of(phone: str) -> set[str]:
+    return {t for t, v in _load("invites.json", {}).items() if same_phone(v.get("phone"), phone)}
+
+
+def sessions_of(phone: str) -> list[str]:
+    toks = tokens_of(phone)
+    sdir = OUT / "sessions"
+    out = []
+    for d in sdir.iterdir() if sdir.exists() else []:
+        c = d / "consent.json"
+        if c.exists() and json.loads(c.read_text()).get("token") in toks:
+            out.append(d.name)
+    return out
+
+
+def user_hikes(phone: str) -> list[dict]:
+    """Newest first: what the agent may tell a person about their own hikes. Numbers only from the summary."""
+    hikes = []
+    for sid in sessions_of(phone):
+        st = session_status(sid)
+        s = st.get("summary") or {}
+        top = [n for n, _ in (s.get("trail_match") or {}).get("top") or [] if not n.startswith("unnamed")]
+        lp = OUT / "sessions" / sid / "labels.json"
+        labels = json.loads(lp.read_text()) if lp.exists() else []
+        hikes.append({"session": sid, "status": st.get("status"), "started": s.get("started"),
+                      "duration_s": s.get("duration_s"), "distance_m": s.get("distance_m"),
+                      "climb_m": (s.get("climb_baro_m") or s.get("climb_dem_m") or {}).get("gain"),
+                      "trail": top[0] if top else None, "motion_samples": (s.get("imu") or {}).get("samples"),
+                      "gaps": (s.get("gaps") or {}).get("count"), "cadence_spm": s.get("cadence_spm"),
+                      "labels": [x["text"] for x in labels], "error": st.get("error")})
+    return sorted(hikes, key=lambda h: h["started"] or 0, reverse=True)
+
+
+def delete_user(phone: str) -> dict:
+    import shutil
+    with LOCK:
+        sids = sessions_of(phone)
+        for sid in sids:
+            shutil.rmtree(OUT / "sessions" / sid)
+        inv = _load("invites.json", {})
+        gone = [t for t, v in inv.items() if same_phone(v.get("phone"), phone)]
+        for t in gone:
+            del inv[t]
+        _save("invites.json", inv)
+        box = _load("outbox.json", [])
+        kept = [m for m in box if not same_phone(m["to"], phone)]
+        _save("outbox.json", kept)
+    print(f"[ground] deleted {len(sids)} hikes, {len(gone)} invites, {len(box) - len(kept)} messages for a user")
+    return {"hikes": len(sids), "invites": len(gone), "messages": len(box) - len(kept)}
 
 
 def session_status(sid: str) -> dict:
@@ -212,7 +280,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self.path.split("?")[0]
-        if p in ("/", "/api/outbox") and not self._local():
+        if (p in ("/", "/api/outbox") or p.startswith("/api/user/")) and not self._local():
             return self._err(404, "not found")
         if p == "/":
             self._send(200, dashboard().encode(), "text/html; charset=utf-8")
@@ -223,6 +291,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE.replace("__APP__", html.escape(app)).encode(), "text/html; charset=utf-8")
         elif m := re.fullmatch(r"/api/session/([A-Za-z0-9-]+)", p):
             self._json(session_status(m.group(1)))
+        elif m := re.fullmatch(r"/api/user/([^/]+)", p):
+            from urllib.parse import unquote
+            self._json({"hikes": user_hikes(unquote(m.group(1)))})
         elif p == "/api/outbox":
             with LOCK:
                 _save("agent.json", {"seen": time.time()})
@@ -252,8 +323,34 @@ class Handler(BaseHTTPRequestHandler):
             rec = {**body, "received": time.time(), "ip": self.headers.get("CF-Connecting-IP") or self.client_address[0]}
             _save("consent.json", rec, OUT / "sessions" / sid)
             self._json({"ok": True, "session_id": sid})
-        elif p.startswith("/api/outbox/") and not self._local():
+        elif (p.startswith("/api/outbox/") or p in ("/api/trigger", "/api/label", "/api/delete")) and not self._local():
             self._err(404, "not found")
+        elif p == "/api/trigger":
+            if not body.get("phone"):
+                return self._err(400, "phone required")
+            try:
+                inv = new_invite(body["phone"])
+            except RuntimeError as e:
+                return self._err(500, str(e))
+            text = body.get("text") or (f"looks like you're heading out on a trail. want this one to help train rescue "
+                                        f"robots? tap to start recording: {inv['link']}")
+            self._json({"invite": inv, "message": enqueue(body["phone"], text, kind="nudge")})
+        elif p == "/api/label":
+            sid, text = body.get("session", ""), (body.get("text") or "").strip()
+            d = OUT / "sessions" / sid
+            if not SID_RE.match(sid) or not d.exists():
+                return self._err(404, "no such session")
+            if not text:
+                return self._err(400, "text required")
+            with LOCK:
+                labels = json.loads((d / "labels.json").read_text()) if (d / "labels.json").exists() else []
+                labels.append({"text": text[:2000], "at": time.time(), "source": body.get("source", "agent")})
+                _save("labels.json", labels, d)
+            self._json({"ok": True, "labels": len(labels)})
+        elif p == "/api/delete":
+            if not body.get("phone"):
+                return self._err(400, "phone required")
+            self._json({"ok": True, "deleted": delete_user(body["phone"])})
         elif m := re.fullmatch(r"/api/outbox/([0-9a-f]+)/(sent|failed)", p):
             with LOCK:
                 box = _load("outbox.json", [])
@@ -262,7 +359,7 @@ class Handler(BaseHTTPRequestHandler):
                         msg["status"] = m.group(2)
                         msg["error"] = body.get("error")
                         msg["at"] = time.time()
-                        if msg.get("session"):
+                        if msg.get("session") and (OUT / "sessions" / msg["session"] / "status.json").exists():
                             d = OUT / "sessions" / msg["session"]
                             st = json.loads((d / "status.json").read_text())
                             st["message_status"] = m.group(2) + (f": {body['error']}" if body.get("error") else "")

@@ -1,75 +1,121 @@
-// Ground Truth Photon agent: texts hikers the opt-in link and sends their hike summary when it is ready.
-// Runs on a Mac signed into Messages, with Full Disk Access for the terminal (Photon's kit reads chat.db).
+// Ground Truth agent on Photon Spectrum: talks with hikers over iMessage, sends their app link, sends the summary
+// when a hike is registered, asks about the trail and files the answer on that hike.
 //
-//   node agent.mjs                    watch for "hike" texts and send whatever the server's outbox holds
-//   node agent.mjs invite +19195550123  text one person the opt-in link now
+//   node agent.mjs                       iMessage through Spectrum Cloud (SPECTRUM_PROJECT_ID / _SECRET)
+//   node agent.mjs --terminal            same agent, chat with it in this terminal (no Photon account needed)
+//   node agent.mjs nudge +19195550123    ask the server to text someone "heading out? record this one" (the running
+//                                        agent sends it; later the app's trailhead geofence does this)
 //
-// GT_SERVER defaults to http://127.0.0.1:8770 (ground/server.py).
-import { IMessageSDK } from '@photon-ai/imessage-kit'
+// Settings come from the environment or ground/agent/.env: SPECTRUM_PROJECT_ID, SPECTRUM_PROJECT_SECRET,
+// XAI_API_KEY (Grok; without it replies are scripted), XAI_MODEL (default grok-4), GT_SERVER (default http://127.0.0.1:8770).
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const SERVER = process.env.GT_SERVER || 'http://127.0.0.1:8770'
-const TRIGGER = /\b(hike|hiking|join|ground ?truth|opt ?in)\b/i
-
-const inviteText = (link) =>
-  `hey, it's ground truth. want this hike to help train rescue robots? ` +
-  `your phone records motion + gps while you walk, nothing else, and you can delete it anytime.\n\n` +
-  `opt in here: ${link}`
-
-async function api(path, body) {
-  const r = await fetch(SERVER + path, body === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  })
-  const j = await r.json().catch(() => ({ error: `non-json reply, HTTP ${r.status}` }))
-  if (!r.ok) throw new Error(`${path}: HTTP ${r.status} ${j.error || ''}`)
-  return j
-}
-
-async function invite(sdk, to) {
-  const inv = await api('/api/invite', { phone: to })
-  await sdk.send({ to, text: inviteText(inv.link) })
-  console.log(`[agent] invited ${to} -> ${inv.link}`)
-}
-
-async function drainOutbox(sdk) {
-  for (const m of await api('/api/outbox')) {
-    try {
-      await sdk.send({ to: m.to, text: m.text })
-      await api(`/api/outbox/${m.id}/sent`, {})
-      console.log(`[agent] sent summary to ${m.to}`)
-    } catch (e) {
-      await api(`/api/outbox/${m.id}/failed`, { error: String(e.message || e) })
-      console.error(`[agent] SEND FAILED to ${m.to}:`, e)
-    }
+const envPath = join(dirname(fileURLToPath(import.meta.url)), '.env')
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '')
   }
 }
 
-const sdk = new IMessageSDK()
+const { Spectrum } = await import('spectrum-ts')
+const { createBrain, grok } = await import('./brain.mjs')
+const { groundServer } = await import('./server.mjs')
+const { Store, key } = await import('./state.mjs')
 
-if (process.argv[2] === 'invite') {
+const server = groundServer()
+
+if (process.argv[2] === 'nudge') {
   const to = process.argv[3]
-  if (!to) { console.error('usage: node agent.mjs invite +1XXXXXXXXXX'); process.exit(2) }
-  await invite(sdk, to)
-  await sdk.close()
+  if (!to) { console.error('usage: node agent.mjs nudge +1XXXXXXXXXX'); process.exit(2) }
+  const r = await server.trigger(key(to))
+  console.log(`[agent] queued a nudge to ${key(to)} with ${r.invite.link}. the running agent sends it within a few seconds.`)
   process.exit(0)
 }
 
-await sdk.startWatching({
-  onDirectMessage: async (msg) => {
-    if (!msg.text || !TRIGGER.test(msg.text) || !msg.participant) return
-    try { await invite(sdk, msg.participant) } catch (e) { console.error('[agent] INVITE FAILED:', e) }
-  },
-  onError: (e) => console.error('[agent] WATCHER ERROR:', e),
-})
-console.log(`[agent] watching Messages for "hike", outbox at ${SERVER}`)
+const useTerminal = process.argv.includes('--terminal')
+const llm = grok()
+if (!llm) console.warn('[agent] WARNING: no XAI_API_KEY, replies are SCRIPTED, not grok. add it to ground/agent/.env')
+else console.log(`[agent] grok model ${process.env.XAI_MODEL || 'grok-4'}`)
 
-let failing = false
+let app, im
+if (useTerminal) {
+  const { terminal } = await import('spectrum-ts/providers/terminal')
+  app = await Spectrum({ providers: [terminal.config()] })
+} else {
+  const { SPECTRUM_PROJECT_ID: projectId, SPECTRUM_PROJECT_SECRET: projectSecret } = process.env
+  if (!projectId || !projectSecret) {
+    console.error('[agent] SPECTRUM_PROJECT_ID and SPECTRUM_PROJECT_SECRET are not set. get them from your project ' +
+      'settings at https://app.photon.codes and put them in ground/agent/.env, or run with --terminal to test locally.')
+    process.exit(1)
+  }
+  const { imessage } = await import('spectrum-ts/providers/imessage')
+  app = await Spectrum({ projectId, projectSecret, providers: [imessage.config()] })
+  im = imessage(app)
+}
+
+const store = new Store()
+const brain = createBrain({ store, server, llm })
+
+// One conversation at a time per person, everyone else in parallel.
+const queues = new Map()
+function serial(id, fn) {
+  const next = (queues.get(id) || Promise.resolve()).then(fn, fn)
+  queues.set(id, next.catch(() => {}))
+  return next
+}
+
+async function sendTo(handle, texts) {
+  if (useTerminal) {
+    for (const t of texts) console.log(`\n[outbound to ${handle}] ${t}`)
+    return
+  }
+  const space = await im.space.create(handle)
+  for (const t of texts) await space.send(t)
+}
+
+// ------------------------------------------------------------------ outbox: summaries and nudges from the server
+let pollFailing = false
 setInterval(async () => {
+  let box
   try {
-    await drainOutbox(sdk)
-    if (failing) console.log('[agent] server reachable again')
-    failing = false
+    box = await server.outbox()
+    if (pollFailing) console.log('[agent] ground server reachable again')
+    pollFailing = false
   } catch (e) {
-    if (!failing) console.error('[agent] OUTBOX POLL FAILED (is ground/server.py running?):', e.message)
-    failing = true
+    if (!pollFailing) console.error('[agent] OUTBOX POLL FAILED:', e.message)
+    pollFailing = true
+    return
+  }
+  for (const msg of box) {
+    await serial(key(msg.to), async () => {
+      try {
+        await sendTo(key(msg.to), brain.outbound(msg))
+        await server.markSent(msg.id)
+        console.log(`[agent] sent ${msg.kind || 'summary'} to ${key(msg.to)}`)
+      } catch (e) {
+        console.error(`[agent] SEND FAILED to ${key(msg.to)}:`, e.message)
+        await server.markFailed(msg.id, e.message).catch((err) => console.error('[agent] could not mark failed:', err.message))
+      }
+    })
   }
 }, 3000)
+
+// ------------------------------------------------------------------ inbound
+console.log(useTerminal ? '[agent] terminal mode: type a message to talk to ground truth.' : '[agent] listening on imessage.')
+for await (const [space, message] of app.messages) {
+  if (message.direction !== 'inbound' || message.content.type !== 'text') continue
+  const from = useTerminal ? 'terminal' : message.sender?.id
+  if (!from) { console.error('[agent] message with no sender, skipped'); continue }
+  serial(key(from), async () => {
+    try {
+      const replies = await space.responding(() => brain.handle(from, message.content.text))
+      for (const r of replies) await space.send(r)
+    } catch (e) {
+      console.error(`[agent] REPLY FAILED for ${key(from)}:`, e)
+      await space.send("sorry, something broke on our end. try again in a minute?").catch(() => {})
+    }
+  })
+}
