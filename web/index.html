@@ -29,22 +29,10 @@
   .edge-lede { margin-top: 16px; max-width: 58ch; color: var(--muted); font-size: clamp(16px, 1.5vw, 18px); }
   .clips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 32px; }
   .clip img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--panel); }
+  .thesis { margin-top: clamp(40px, 7vh, 64px); font: 400 clamp(24px, 2.8vw, 34px)/1.28 var(--serif); max-width: 40ch; }
+  .thesis a { border-bottom: 1px solid var(--line); }
+  .thesis a:hover { border-color: var(--ink); }
   .edge-lede a.q { color: var(--ink); border-bottom: 1px solid var(--line); }
-  .clip figcaption { margin-top: 12px; color: var(--muted); font-size: 14px; }
-  .clip figcaption b { display: block; margin-bottom: 4px; font: 500 11px/1.4 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
-  .edge-k { display: block; margin-top: clamp(56px, 9vh, 88px); }
-  .edge .ledger { margin-top: 14px; }
-  .scramble-h { margin-top: 12px; font: 400 clamp(26px, 3vw, 36px)/1.12 var(--serif); max-width: 24ch; }
-  .buyers { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 15px; }
-  .buyers th { text-align: left; padding: 0 16px 10px 0; font: 500 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--ink); }
-  .buyers td { padding: 14px 16px 14px 0; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--muted); }
-  .buyers td:first-child { color: var(--ink); white-space: nowrap; }
-  .buyers td:last-child { font: 400 13px/1.5 var(--mono); color: var(--ink); white-space: nowrap; }
-  .scroll { overflow-x: auto; }
-  .punch { margin-top: 28px; font: italic 400 clamp(22px, 2.6vw, 30px)/1.25 var(--serif); max-width: 34ch; }
-  .g2s { margin-top: clamp(48px, 8vh, 72px); padding: 28px 0 0; border-top: 1px solid var(--ink); display: grid; grid-template-columns: 1fr 2fr; gap: 24px; }
-  .g2s h3 { font: 400 clamp(26px, 3vw, 34px)/1.1 var(--serif); }
-  .g2s p { color: var(--muted); font-size: 16px; max-width: 62ch; }
 
   section.use { padding: clamp(72px, 12vh, 120px) 0 0; }
   .links { margin-top: 28px; border-top: 1px solid var(--ink); }
@@ -97,7 +85,7 @@
   .next span.now { color: var(--ink); border-color: var(--ink); }
 
   @media (max-width: 820px) {
-    .demos, .ledger, .steps, .clips, .g2s { grid-template-columns: 1fr; }
+    .demos, .ledger, .steps, .clips { grid-template-columns: 1fr; }
     .ledger > div, .ledger > div + div { padding: 18px 0; border-left: 0; border-bottom: 1px solid var(--line); }
     .links a { grid-template-columns: 1fr auto; gap: 6px 16px; }
     .links a span { grid-column: 1; grid-row: 2; }
@@ -181,53 +169,17 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
 
     <div class="clips">
       <figure class="clip">
-        <img src="media/fail-sprint.gif" alt="A humanoid sprinting on a track veers into the barrier and falls apart" loading="lazy">
-        <figcaption><b>Sprint race · Beijing</b>A humanoid running the track drifts out of its lane and crashes into the wall.</figcaption>
+        <img src="media/fail-sprint.gif" alt="" loading="lazy">
       </figure>
       <figure class="clip">
-        <img src="media/fail-atlas.gif" alt="Boston Dynamics Atlas misses landings on a parkour course" loading="lazy">
-        <figcaption><b>Boston Dynamics Atlas</b>Misses a landing on the parkour course and goes down hard.</figcaption>
+        <img src="media/fail-atlas.gif" alt="" loading="lazy">
       </figure>
       <figure class="clip">
-        <img src="media/fail-soccer.gif" alt="A soccer humanoid swings at the ball and falls over" loading="lazy">
-        <figcaption><b>Robot soccer</b>Winds up to kick and falls over before reaching the ball.</figcaption>
+        <img src="media/fail-soccer.gif" alt="" loading="lazy">
       </figure>
     </div>
 
-    <span class="k edge-k">The data scramble</span>
-    <h3 class="scramble-h">Every lab is buying robot data by the hour.</h3>
-    <p class="edge-lede">Language models learned from the whole internet. Robots have nothing like it, so the industry is paying people to move in front of cameras, in suits, in headsets, at scale.</p>
-    <div class="ledger">
-      <div>
-        <div class="v">$48/hr</div>
-        <div class="d">what Tesla pays people to wear motion-capture suits and walk test routes all day</div>
-      </div>
-      <div>
-        <div class="v">16 million</div>
-        <div class="d">chore videos Figure's Index app has bought from people filming themselves at home</div>
-      </div>
-      <div>
-        <div class="v">100,000 yrs</div>
-        <div class="d">how far robot data trails the data behind today's AI models, by UC Berkeley's estimate</div>
-      </div>
-    </div>
-
-    <div class="scroll"><table class="buyers">
-      <thead><tr><th>Who</th><th>How they collect</th><th>Scale</th></tr></thead>
-      <tbody>
-        <tr><td>Figure</td><td>Films people living in Brookfield apartments, and pays anyone with a phone to film chores</td><td>108 countries</td></tr>
-        <tr><td>Micro1, Instawork</td><td>Gig workers mount iPhones on their heads to record folding, cooking and cleaning</td><td>50+ countries</td></tr>
-        <tr><td>Generalist</td><td>Wearable grippers in homes, warehouses and workplaces</td><td>+10,000 hours a week</td></tr>
-        <tr><td>Shanghai data factories</td><td>Rows of operators teleoperate robots through everyday tasks</td><td>4,000 m² floor</td></tr>
-      </tbody>
-    </table></div>
-    <p class="punch">Nearly all of it is kitchens, tables and warehouse floors. Almost none of it knows the ground under the person: the slope, the snow, the scree.</p>
-    <p class="src">Sources: <a href="https://iotworldtoday.com/robotics/tesla-pays-48-an-hour-for-motion-capture-to-develop-humanoid-robot" target="_blank" rel="noopener">Tesla job posting, via IoT World Today</a> · <a href="https://runtimewire.com/article/figure-index-human-video-robot-training-data" target="_blank" rel="noopener">Figure Index launch</a> · <a href="https://www.figure.ai/news/project-go-big" target="_blank" rel="noopener">Figure, Project Go-Big</a> · <a href="https://www.technologyreview.com/2026/04/01/1134863/humanoid-data-training-gig-economy-2026-breakthrough-technology/" target="_blank" rel="noopener">MIT Technology Review on gig data workers</a> · <a href="https://www.humanoidsdaily.com/news/generalist-ai-unveils-gen-0-claims-scaling-laws-for-robotics-backed-by-270-000-hours-of-real-world-data" target="_blank" rel="noopener">Generalist GEN-0</a> · <a href="https://www.sixthtone.com/news/1017920" target="_blank" rel="noopener">Sixth Tone on Shanghai's robot training factory</a> · <a href="https://vcresearch.berkeley.edu/news/are-we-truly-verge-humanoid-robot-revolution" target="_blank" rel="noopener">Ken Goldberg, Science Robotics 2025</a></p>
-
-    <div class="g2s">
-      <h3>Ground to skill</h3>
-      <p>Edge cases live where the ground changes: ice under fresh snow, loose scree, a 35° pitch, a root across the trail. We record people moving over exactly that ground, rebuild the same ground in physics, train the robot there, and send it back to wherever it still falls. Every fall tells us what to record next, so the data goes straight at the long tail instead of more of the easy middle.</p>
-    </div>
+    <p class="thesis">Robot data trails the data behind language models by an estimated <a href="https://vcresearch.berkeley.edu/news/are-we-truly-verge-humanoid-robot-revolution" target="_blank" rel="noopener">100,000 years</a>, so labs now pay people by the hour to move in front of cameras. Almost none of it records the ground underfoot, so we tie every motion to the terrain it happened on and train robots on that same ground.</p>
   </section>
 
   <section class="loop">
