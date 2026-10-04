@@ -12,6 +12,7 @@
 <style>
   .hero { padding: clamp(36px, 8vh, 88px) 0 24px; }
 
+  .sub { margin-top: 18px; font: 400 clamp(22px, 2.6vw, 32px)/1.2 var(--serif); color: var(--muted); }
   .demos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: clamp(32px, 6vh, 52px); }
   .demos video { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; background: var(--panel); }
 
@@ -84,12 +85,19 @@
   .step p { color: var(--muted); font-size: 14.5px; }
   .step .cap { margin-top: auto; padding-top: 8px; font: 400 11px/1.5 var(--mono); color: var(--faint); }
 
-  section.why { padding: clamp(80px, 13vh, 130px) 0; }
-  .why p.big { font: 400 clamp(26px, 3.2vw, 40px)/1.22 var(--serif); max-width: 30ch; }
-  .why p.big em { font-style: italic; }
-  .next { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 30px; }
-  .next span { font: 500 12px/1 var(--mono); letter-spacing: 0.06em; padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
-  .next span.now { color: var(--ink); border-color: var(--ink); }
+  section.terrain { padding: clamp(72px, 12vh, 120px) 0; --go: #2b8a3e; }
+  .ground { list-style: none; margin-top: 14px; max-width: 420px; border-top: 1px solid var(--ink); }
+  .ground li, .ground a { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+  .ground li { border-bottom: 1px solid var(--line); }
+  .ground li > b, .ground a { padding: 16px 0; }
+  .ground li > em { padding: 16px 0; }
+  .ground a { flex: 1; transition: padding 0.2s; }
+  .ground a:hover { padding-left: 8px; }
+  .ground b { font: 400 22px/1.15 var(--serif); }
+  .ground em { font: 500 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; font-style: normal; color: var(--faint); }
+  .ground li:not(.live) b { color: var(--faint); }
+  .ground li.live b::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 10px; border-radius: 50%; background: var(--go); vertical-align: middle; }
+  .ground li.live em { color: var(--go); }
 
   @media (max-width: 820px) {
     .demos, .ledger, .steps, .clips, .arch { grid-template-columns: 1fr; }
@@ -101,7 +109,7 @@
     .links a em { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
     .api { grid-template-columns: 1fr; padding: 20px; }
   }
-  @media (prefers-reduced-motion: reduce) { .links a, .api { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .links a, .api, .ground a { transition: none; } }
 </style>
 </head>
 <body>
@@ -112,8 +120,8 @@
   </header>
 
   <section class="hero">
-    <h1>Robots that go where people get hurt.</h1>
-    <p class="lede">Hazard Intelligence records how people move on dangerous ground, rebuilds that exact ground in physics, and trains robots on it. Skiing and hiking first.</p>
+    <h1>Hazard Intelligence</h1>
+    <p class="sub">Humanoids for emergency rescues.</p>
 
     <div class="demos">
       <video src="media/ski.mp4" poster="media/ski.jpg" autoplay muted loop playsinline aria-label="A Unitree G1 skiing Val d'Isère in simulation"></video>
@@ -200,11 +208,15 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
   </section>
 
 
-  <section class="why">
-    <p class="big">Ski patrol, rescue teams and mine crews work on ground no robot has learned. Robots learn to move from people, and <em>almost none of that motion records what was underfoot.</em></p>
-    <div class="next">
-      <span class="now">Snow</span><span class="now">Trails</span><span>Rescue sites</span><span>Mines</span><span>Quarries</span>
-    </div>
+  <section class="terrain">
+    <span class="k">Terrain</span>
+    <ul class="ground">
+      <li class="live"><a href="api.html"><b>Snow</b><em>Use today →</em></a></li>
+      <li class="live"><a href="api.html"><b>Trails</b><em>Use today →</em></a></li>
+      <li><b>Rescue sites</b><em>Soon</em></li>
+      <li><b>Mines</b><em>Soon</em></li>
+      <li><b>Quarries</b><em>Soon</em></li>
+    </ul>
   </section>
 
   <footer>
