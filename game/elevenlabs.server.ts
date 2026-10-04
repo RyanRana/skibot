@@ -1,5 +1,6 @@
-// ElevenLabs text-to-speech for the race commentator, in the dev server. The browser posts a line of
-// commentary to /__tts and gets MP3 back; the key (ELEVENLABS_API_KEY in game/.env.local, gitignored) stays
+// ElevenLabs text-to-speech for the race commentator, in the dev server: the same GET /api/tts?t=<line>
+// contract as the deployed Vercel function (api/tts.js at the repo root), so the game calls one URL locally
+// and live. The browser asks for a line and gets MP3 back; the key (ELEVENLABS_API_KEY in game/.env.local, gitignored) stays
 // here. Every line is cached on disk (game/.tts-cache/, gitignored), so a line said once costs nothing the
 // next time. Uses the low-latency Flash model; the voice is ELEVENLABS_VOICE_ID or a commentator-style voice
 // picked from the account. Loopback only.
@@ -32,17 +33,14 @@ export function elevenlabs(apiKey: string | undefined, voiceId: string | undefin
     apply: 'serve',
     configureServer(server) {
       const log = (s: string) => server.config.logger.info(`[tts] ${s}`, { timestamp: true });
-      server.middlewares.use('/__tts', async (req, res) => {
+      server.middlewares.use('/api/tts', async (req, res) => {
         if (!LOOPBACK.has(req.socket.remoteAddress ?? '')) { res.statusCode = 403; res.end(); return; }
         const v = await pickVoice();
         if (!v && apiKey) voice = null; // a network blip: try again next time
-        if (req.method === 'GET') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ enabled: !!v, voice: v?.name ?? null })); return; }
+        if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        const text = (new URL(req.url ?? '/', 'http://local').searchParams.get('t') ?? '').slice(0, 300).trim();
+        if (!text) { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ enabled: !!v, voice: v?.name ?? null })); return; }
         if (!v) { res.statusCode = 503; res.end('no ElevenLabs key or voice'); return; }
-        const chunks: Buffer[] = [];
-        for await (const c of req) chunks.push(c as Buffer);
-        let text = '';
-        try { text = String(JSON.parse(Buffer.concat(chunks).toString()).text ?? '').slice(0, 400).trim(); } catch {}
-        if (!text) { res.statusCode = 400; res.end(); return; }
         const file = resolve(cacheDir, createHash('sha1').update(`${v.id}|${MODEL}|${text}`).digest('hex') + '.mp3');
         res.setHeader('content-type', 'audio/mpeg');
         if (existsSync(file)) { res.end(readFileSync(file)); return; }

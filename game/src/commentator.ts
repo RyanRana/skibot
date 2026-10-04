@@ -1,4 +1,5 @@
-// The race commentator, voiced by ElevenLabs through the dev server (/__tts). Lines have a priority: a big
+// The race commentator, voiced by ElevenLabs through /api/tts (the dev server locally, a Vercel function live;
+// the key never reaches the page). Lines have a priority: a big
 // moment (the finish, a crash) cuts in, routine calls wait their turn, and chatter that has gone stale by the
 // time the voice is free is dropped, so the commentary always matches what is on screen. Audio is fetched as
 // soon as a line is asked for, so it is usually ready by the time its turn comes. Without a key it falls back
@@ -16,7 +17,7 @@ export class Commentator {
   private gen = 0;              // bumped on every interruption, so a line still loading knows it was cut
 
   constructor(private ctx: () => AudioContext | null, private out: () => AudioNode | null, private fallback: (text: string, force: boolean) => void) {
-    fetch('/__tts').then(r => r.ok ? r.json() : null).then(j => { this.enabled = !!j?.enabled; this.voice = j?.voice ?? ''; }).catch(() => {});
+    fetch('/api/tts').then(r => r.ok ? r.json() : null).then(j => { this.enabled = !!j?.enabled; this.voice = j?.voice ?? ''; }).catch(() => {});
   }
 
   /** Seconds since the commentator last finished or started a line (for idle chatter). */
@@ -34,7 +35,7 @@ export class Commentator {
   }
 
   private fetch(text: string, ctx: AudioContext) {
-    return fetch('/__tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+    return fetch(`/api/tts?t=${encodeURIComponent(text)}`)
       .then(r => r.ok ? r.arrayBuffer() : null)
       .then(b => b ? ctx.decodeAudioData(b) : null)
       .catch(() => null);
