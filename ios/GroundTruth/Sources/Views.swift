@@ -1,12 +1,19 @@
 import SwiftUI
 
+// The Hazard Intelligence look (web/site.css): white ground, Times for headlines, system sans for text,
+// small mono uppercase labels, 1px rules, solid ink buttons.
 private enum Ink {
-    static let bg = Color(white: 0.97)
-    static let text = Color(white: 0.1)
-    static let mute = Color(white: 0.52)
-    static let rule = Color(white: 0.84)
-    static let bad = Color(red: 0.70, green: 0.15, blue: 0.12)
+    static let bg = Color.white
+    static let panel = Color(red: 0.969, green: 0.969, blue: 0.961)   // #f7f7f5
+    static let text = Color(red: 0.067, green: 0.075, blue: 0.082)    // #111315
+    static let mute = Color(red: 0.373, green: 0.396, blue: 0.420)    // #5f656b
+    static let faint = Color(red: 0.604, green: 0.624, blue: 0.647)   // #9a9fa5
+    static let line = Color(red: 0.902, green: 0.906, blue: 0.910)    // #e6e7e8
+    static let bad = Color(red: 0.702, green: 0.149, blue: 0.118)
+    static let go = Color(red: 0.169, green: 0.541, blue: 0.243)      // #2b8a3e, the site's live dot
 }
+
+private func serif(_ size: CGFloat) -> Font { .custom("Times New Roman", size: size) }
 
 struct RootView: View {
     @EnvironmentObject var model: AppModel
@@ -18,8 +25,12 @@ struct RootView: View {
             Ink.bg.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("ground truth").font(.system(size: 15, weight: .light)).foregroundStyle(Ink.mute)
-                        .padding(.bottom, 36)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Hi.").font(serif(34))
+                        Spacer()
+                        Kicker(text: "Ground Truth")
+                    }
+                    .padding(.bottom, 44)
                     switch model.stage {
                     case .noInvite: NoInviteView()
                     case .consent: ConsentView()
@@ -29,16 +40,17 @@ struct RootView: View {
                     case .ended: EndedView()
                     }
                     if let e = model.error ?? recorder.error {
-                        Text(e).foregroundStyle(Ink.bad).font(.system(size: 14, weight: .light)).padding(.top, 20)
+                        Problem(text: e).padding(.top, 20)
                     }
                 }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 40)
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+                .padding(.bottom, 40)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .foregroundStyle(Ink.text)
-        .font(.system(size: 17, weight: .light))
+        .font(.system(size: 16))
         .preferredColorScheme(.light)
     }
 }
@@ -46,56 +58,130 @@ struct RootView: View {
 // MARK: pieces
 
 struct Hairline: View {
+    var color: Color = Ink.line
     @Environment(\.displayScale) var scale
-    var body: some View { Rectangle().fill(Ink.rule).frame(height: 1 / scale) }
+    var body: some View { Rectangle().fill(color).frame(height: 1 / scale) }
 }
 
-struct LineButton: View {
-    let title: String
-    var disabled = false
-    let action: () -> Void
-    @Environment(\.displayScale) var scale
-
+/// The site's small mono uppercase label (.k).
+struct Kicker: View {
+    let text: String
+    var color: Color = Ink.faint
     var body: some View {
-        Button(action: action) {
-            Text(title).frame(maxWidth: .infinity).padding(.vertical, 15)
-                .overlay(Rectangle().stroke(disabled ? Ink.rule : Ink.text, lineWidth: 1 / scale))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(disabled ? Ink.mute : Ink.text)
-        .disabled(disabled)
-    }
-}
-
-struct Row: View {
-    let label: String
-    let value: String
-    var bad = false
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(label).foregroundStyle(Ink.mute)
-                Spacer()
-                Text(value).monospacedDigit().foregroundStyle(bad ? Ink.bad : Ink.text)
-            }
-            .padding(.vertical, 11)
-            Hairline()
-        }
-        .font(.system(size: 15, weight: .light))
+        Text(text.uppercased()).font(.system(size: 11, weight: .medium, design: .monospaced)).tracking(1.5).foregroundStyle(color)
     }
 }
 
 struct Title: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 32, weight: .light)).tracking(-0.4).padding(.bottom, 14)
+        Text(text).font(serif(40)).tracking(-0.8).lineSpacing(-4).fixedSize(horizontal: false, vertical: true).padding(.bottom, 16)
     }
 }
 
-struct Note: View {
+struct Lede: View {
     let text: String
-    var body: some View { Text(text).foregroundStyle(Ink.mute).fixedSize(horizontal: false, vertical: true) }
+    var body: some View {
+        Text(text).font(.system(size: 17)).foregroundStyle(Ink.mute).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct Problem: View {
+    let text: String
+    var body: some View {
+        Text(text).font(.system(size: 14)).foregroundStyle(Ink.bad).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Solid ink button (primary) or a 1px outlined one.
+struct InkButton: View {
+    let title: String
+    var primary = true
+    var disabled = false
+    let action: () -> Void
+    @Environment(\.displayScale) var scale
+
+    var body: some View {
+        Button(action: action) {
+            let solid = primary && !disabled  // disabled reads as the outlined style, never a grey slab
+            Text(title).font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity).padding(.vertical, 16)
+                .foregroundStyle(solid ? Ink.bg : disabled ? Ink.faint : Ink.text)
+                .background(solid ? Ink.text : Ink.bg)
+                .overlay(Rectangle().stroke(solid ? Ink.text : Ink.line, lineWidth: 1 / scale))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+    }
+}
+
+/// A list in the site's style: an ink rule on top, hairlines between rows.
+struct RuledList<Content: View>: View {
+    @ViewBuilder let content: Content
+    var body: some View {
+        VStack(spacing: 0) {
+            Hairline(color: Ink.text)
+            content
+        }
+    }
+}
+
+/// A row: serif name on the left, muted detail on the right (the site's .links rows).
+struct Row: View {
+    let label: String
+    let value: String
+    var bad = false
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                Text(label).font(serif(20))
+                Spacer(minLength: 8)
+                Text(value).font(.system(size: 15)).monospacedDigit().multilineTextAlignment(.trailing)
+                    .foregroundStyle(bad ? Ink.bad : Ink.mute)
+            }
+            .padding(.vertical, 15)
+            Hairline()
+        }
+    }
+}
+
+/// A stat in the site's ledger: mono label, big serif number, muted note.
+struct Stat: View {
+    let label: String
+    let value: String
+    var note: String? = nil
+    var bad = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Kicker(text: label)
+            Text(value).font(serif(34)).monospacedDigit().foregroundStyle(bad ? Ink.bad : Ink.text)
+                .lineLimit(1).minimumScaleFactor(0.6).padding(.top, 12)
+            if let note {
+                Text(note).font(.system(size: 13)).foregroundStyle(bad ? Ink.bad : Ink.mute).padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 18)
+    }
+}
+
+/// Two-column ledger with the rules the site draws between cells.
+struct Ledger: View {
+    let stats: [Stat]
+    var body: some View {
+        VStack(spacing: 0) {
+            Hairline()
+            ForEach(Array(stride(from: 0, to: stats.count, by: 2)), id: \.self) { i in
+                HStack(alignment: .top, spacing: 0) {
+                    stats[i].padding(.trailing, 16)
+                    Rectangle().fill(Ink.line).frame(width: 1)
+                    Group { if i + 1 < stats.count { stats[i + 1] } else { Color.clear } }.padding(.leading, 18)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Hairline()
+            }
+        }
+    }
 }
 
 // MARK: screens
@@ -106,15 +192,15 @@ struct NoInviteView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Title(text: "waiting for an invite")
-            Note(text: "open the link we texted you. it brings you back here, ready to go.")
-            Hairline().padding(.vertical, 36)
-            Text("testing").font(.system(size: 13, weight: .light)).foregroundStyle(Ink.mute).padding(.bottom, 10)
-            TextField("server, e.g. https://name.trycloudflare.com", text: $server)
+            Title(text: "Waiting for your invite.")
+            Lede(text: "Open the link we texted you. It brings you back here, ready to go.")
+            Kicker(text: "Testing").padding(.top, 56).padding(.bottom, 12)
+            TextField(text: $server, prompt: Text(verbatim: "https://name.trycloudflare.com").foregroundStyle(Ink.faint)) { EmptyView() }
                 .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                .font(.system(size: 15, weight: .light)).padding(.bottom, 8)
-            Hairline().padding(.bottom, 16)
-            LineButton(title: "get a test invite", disabled: server.isEmpty) {
+                .font(.system(size: 16)).padding(12)
+                .overlay(Rectangle().stroke(Ink.line, lineWidth: 1))
+                .padding(.bottom, 10)
+            InkButton(title: "Get a test invite", disabled: server.isEmpty) {
                 Task { await model.requestTestInvite(server: server) }
             }
         }
@@ -126,18 +212,16 @@ struct ConsentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Title(text: "turn this hike into robot training data")
-            Note(text: "rescue robots need to learn how people move on real ground: mud, scree, roots, switchbacks. your hike can teach them.")
-                .padding(.bottom, 28)
-            Group {
-                Row(label: "recorded", value: "motion, gps, altitude, steps")
-                Row(label: "only while", value: "you're on a hike you started")
-                Row(label: "never", value: "contacts, photos, audio")
-                Row(label: "on maps", value: "first and last 200 m trimmed")
-                Row(label: "battery", value: "about like a fitness app")
-                Row(label: "delete", value: "anytime, just text us")
+            Title(text: "Your hike can teach a rescue robot.")
+            Lede(text: "Robots learn how people move on real ground, mud, scree, roots and switchbacks, from hikes like yours.")
+            Kicker(text: "What we track").padding(.top, 40).padding(.bottom, 12)
+            RuledList {
+                Row(label: "Motion", value: "Accelerometer and gyroscope")
+                Row(label: "Location", value: "GPS")
+                Row(label: "Altitude", value: "Barometer")
+                Row(label: "Steps", value: "Step count")
             }
-            LineButton(title: "i'm in", disabled: model.busy) {
+            InkButton(title: "I'm in", disabled: model.busy) {
                 Task { model.busy = true; await model.consent(); model.busy = false }
             }
             .padding(.top, 32)
@@ -148,26 +232,29 @@ struct ConsentView: View {
 struct SetupView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.displayScale) var scale
-    private let spots = ["pocket", "hand", "backpack", "hip belt"]
+    private let spots = ["Pocket", "Hand", "Backpack", "Hip belt"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Title(text: "where will your phone be?")
-            Note(text: "it changes what the motion looks like, so it helps to know.").padding(.bottom, 24)
-            HStack(spacing: 8) {
+            Title(text: "Where will your phone be?")
+            Lede(text: "It changes what the motion looks like, so it helps to know.")
+            Kicker(text: "Placement").padding(.top, 40).padding(.bottom, 12)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                 ForEach(spots, id: \.self) { s in
-                    Button { model.placement = s } label: {
-                        Text(s).font(.system(size: 14, weight: .light)).frame(maxWidth: .infinity).padding(.vertical, 11)
-                            .overlay(Rectangle().stroke(model.placement == s ? Ink.text : Ink.rule, lineWidth: 1 / scale))
+                    let on = model.placement == s.lowercased()
+                    Button { model.placement = s.lowercased() } label: {
+                        Text(s).font(serif(20)).frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 14).padding(.vertical, 16)
+                            .foregroundStyle(on ? Ink.text : Ink.faint)
+                            .overlay(Rectangle().stroke(on ? Ink.text : Ink.line, lineWidth: on ? 1 : 1 / scale))
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(model.placement == s ? Ink.text : Ink.mute)
                 }
             }
-            .padding(.bottom, 32)
-            LineButton(title: "start hike") { model.start() }
-            Note(text: "ios will ask for location and motion. allow both. you can lock your phone once it's recording.")
-                .font(.system(size: 13, weight: .light)).padding(.top, 14)
+            InkButton(title: "Start hike") { model.start() }.padding(.top, 32)
+            Text("iOS will ask for location and motion. Allow both. You can lock your phone once it's recording.")
+                .font(.system(size: 13)).foregroundStyle(Ink.mute).padding(.top, 14).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -184,22 +271,26 @@ struct RecordingView: View {
         let started = s?.started ?? now.timeIntervalSince1970
         let gaps = s?.gaps ?? []
         let gapTime = gaps.reduce(0) { $0 + ($1[1] - $1[0]) }
+        let motion = s?.counts["imu"] ?? 0
         VStack(alignment: .leading, spacing: 0) {
-            Text("recording").foregroundStyle(Ink.mute).font(.system(size: 14, weight: .light))
-            Text(clock(now.timeIntervalSince1970 - started)).font(.system(size: 60, weight: .ultraLight)).monospacedDigit()
-                .padding(.bottom, 24)
-            Row(label: "distance", value: String(format: "%.2f km", (s?.distance ?? 0) / 1000))
-            Row(label: "gps", value: recorder.hacc < 0 ? "searching" : String(format: "± %.0f m", recorder.hacc),
-                bad: recorder.hacc > 30)
-            Row(label: "motion samples", value: "\(s?.counts["imu"] ?? 0)", bad: (s?.counts["imu"] ?? 0) == 0)
-            Row(label: "altitude samples", value: "\(s?.counts["baro"] ?? 0)")
-            Row(label: "gaps", value: gaps.isEmpty ? "none" : "\(gaps.count), \(Int(gapTime)) s", bad: !gaps.isEmpty)
-            ForEach(recorder.problems, id: \.self) { p in
-                Text(p).foregroundStyle(Ink.bad).font(.system(size: 13, weight: .light)).padding(.top, 10)
+            HStack(spacing: 8) {
+                Circle().fill(Ink.go).frame(width: 8, height: 8)
+                Kicker(text: "Recording", color: Ink.go)
             }
-            Note(text: "lock your phone and put it away. recording keeps going. don't swipe the app closed, that stops it.")
-                .font(.system(size: 14, weight: .light)).padding(.vertical, 28)
-            HoldButton(title: "hold to end hike") { Task { await model.end() } }
+            Text(clock(now.timeIntervalSince1970 - started)).font(serif(84)).tracking(-1.5).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.5).padding(.top, 10).padding(.bottom, 28)
+            Ledger(stats: [
+                Stat(label: "Distance", value: String(format: "%.2f", (s?.distance ?? 0) / 1000), note: "kilometres"),
+                Stat(label: "GPS", value: recorder.hacc < 0 ? "—" : String(format: "± %.0f", recorder.hacc),
+                     note: recorder.hacc < 0 ? "searching" : "metres", bad: recorder.hacc > 30),
+                Stat(label: "Motion", value: motion.formatted(), note: "samples at 100 Hz", bad: motion == 0),
+                Stat(label: "Gaps", value: "\(gaps.count)", note: gaps.isEmpty ? "none so far" : "\(Int(gapTime)) s missing",
+                     bad: !gaps.isEmpty),
+            ])
+            ForEach(recorder.problems, id: \.self) { p in Problem(text: p).padding(.top, 10) }
+            Lede(text: "Lock your phone and put it away. Recording keeps going. Don't swipe the app closed, that stops it.")
+                .padding(.vertical, 28)
+            HoldButton(title: "Hold to end hike") { Task { await model.end() } }
         }
     }
 }
@@ -208,22 +299,27 @@ struct HoldButton: View {
     let title: String
     let action: () -> Void
     @State private var progress: CGFloat = 0
-    @Environment(\.displayScale) var scale
 
     var body: some View {
-        Text(title).frame(maxWidth: .infinity).padding(.vertical, 15)
-            .background(GeometryReader { g in
-                Rectangle().fill(Ink.rule.opacity(0.7)).frame(width: g.size.width * progress)
-            })
-            .overlay(Rectangle().stroke(Ink.text, lineWidth: 1 / scale))
-            .contentShape(Rectangle())
-            .onLongPressGesture(minimumDuration: 1.5) {
-                progress = 0
-                action()
-            } onPressingChanged: { pressing in
-                withAnimation(pressing ? .linear(duration: 1.5) : .easeOut(duration: 0.3)) { progress = pressing ? 1 : 0 }
+        GeometryReader { g in
+            let label = Text(title).font(.system(size: 16, weight: .medium)).frame(width: g.size.width, height: g.size.height)
+            ZStack(alignment: .leading) {
+                label.foregroundStyle(Ink.text)
+                Rectangle().fill(Ink.text).frame(width: g.size.width * progress)
+                label.foregroundStyle(Ink.bg)  // white where the fill has reached
+                    .mask(alignment: .leading) { Rectangle().frame(width: g.size.width * progress) }
             }
-            .accessibilityAddTraits(.isButton)
+        }
+        .frame(height: 52)
+        .overlay(Rectangle().stroke(Ink.text, lineWidth: 1))
+        .contentShape(Rectangle())
+        .onLongPressGesture(minimumDuration: 1.5) {
+            progress = 0
+            action()
+        } onPressingChanged: { pressing in
+            withAnimation(pressing ? .linear(duration: 1.5) : .easeOut(duration: 0.3)) { progress = pressing ? 1 : 0 }
+        }
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -233,12 +329,12 @@ struct InterruptedView: View {
     var body: some View {
         let last = model.session?.lastImuT
         VStack(alignment: .leading, spacing: 0) {
-            Title(text: "recording stopped")
-            Note(text: last.map { "the app was closed or the phone restarted around \(time($0)). everything up to then is saved." }
-                 ?? "the app was closed before any motion was recorded.")
-                .padding(.bottom, 28)
-            LineButton(title: "keep recording") { model.start() }.padding(.bottom, 12)
-            LineButton(title: "end hike", disabled: model.busy) { Task { await model.end() } }
+            Kicker(text: "Paused", color: Ink.bad).padding(.bottom, 14)
+            Title(text: "Recording stopped.")
+            Lede(text: last.map { "The app was closed or the phone restarted around \(time($0)). Everything up to then is saved." }
+                 ?? "The app was closed before any motion was recorded.")
+            InkButton(title: "Keep recording") { model.start() }.padding(.top, 32).padding(.bottom, 10)
+            InkButton(title: "End hike", primary: false, disabled: model.busy) { Task { await model.end() } }
         }
     }
 }
@@ -253,33 +349,46 @@ struct EndedView: View {
         let uploaded = s?.status == .uploaded || (SessionStore.load(s?.id ?? "")?.status == .uploaded)
         let srv = uploader.server
         let status = srv?["status"] as? String
+        let noMotion = (s?.counts["imu"] ?? 0) == 0
         VStack(alignment: .leading, spacing: 0) {
-            Title(text: uploaded ? "thank you" : "sending your hike")
-            Row(label: "time", value: clock((s?.ended ?? 0) - (s?.started ?? 0)))
-            Row(label: "distance", value: String(format: "%.2f km", (s?.distance ?? 0) / 1000))
-            Row(label: "motion samples", value: "\(s?.counts["imu"] ?? 0)")
-            let noMotion = (s?.counts["imu"] ?? 0) == 0
-            Row(label: "gaps", value: noMotion ? "no motion data" : (s?.gaps.isEmpty ?? true) ? "none" : "\(s!.gaps.count)",
-                bad: noMotion || !(s?.gaps.isEmpty ?? true))
-            Row(label: "upload", value: uploaded ? "done" : mine.isEmpty ? "waiting" :
-                "\(max(uploader.total - mine.count, 0)) of \(uploader.total) files",
-                bad: uploader.lastError != nil)
-            if uploaded {
-                Row(label: "server", value: status == "done" ? "registered" : status == "failed" ? "failed" : "registering",
-                    bad: status == "failed")
+            Kicker(text: uploaded ? "Hike received" : "Uploading").padding(.bottom, 14)
+            Title(text: uploaded ? "Thank you." : "Sending your hike.")
+            Ledger(stats: [
+                Stat(label: "Time", value: clock((s?.ended ?? 0) - (s?.started ?? 0))),
+                Stat(label: "Distance", value: String(format: "%.2f", (s?.distance ?? 0) / 1000), note: "kilometres"),
+                Stat(label: "Motion", value: (s?.counts["imu"] ?? 0).formatted(), note: "samples", bad: noMotion),
+                Stat(label: "Gaps", value: noMotion ? "—" : "\(s?.gaps.count ?? 0)",
+                     note: noMotion ? "no motion data" : nil, bad: noMotion || !(s?.gaps.isEmpty ?? true)),
+            ])
+            RuledList {
+                Row(label: "Upload", value: uploaded ? "Done" : mine.isEmpty ? "Waiting" :
+                    "\(max(uploader.total - mine.count, 0)) of \(uploader.total) files", bad: uploader.lastError != nil)
+                if uploaded {
+                    Row(label: "Server", value: status == "done" ? "Registered" : status == "failed" ? "Failed" : "Registering",
+                        bad: status == "failed")
+                }
             }
+            .padding(.top, 32)
             if let e = uploader.lastError {
-                Text("\(e). retrying every 20 s.").foregroundStyle(Ink.bad).font(.system(size: 13, weight: .light)).padding(.top, 12)
-                LineButton(title: "retry now") { model.retryUpload() }.padding(.top, 16)
+                Problem(text: "\(e). Retrying every 20 s.").padding(.top, 12)
+                InkButton(title: "Retry now", primary: false) { model.retryUpload() }.padding(.top, 16)
             }
             if status == "failed", let e = srv?["error"] as? String {
-                Text(e).foregroundStyle(Ink.bad).font(.system(size: 13, weight: .light)).padding(.top, 12)
+                Problem(text: e).padding(.top, 12)
             }
             if let msg = srv?["message"] as? String {
-                Text(msg).font(.system(size: 15, weight: .light)).padding(.top, 24).fixedSize(horizontal: false, vertical: true)
+                Kicker(text: "The text we sent").padding(.top, 32)
+                Text(verbatim: msg).font(.system(size: 13, design: .monospaced)).foregroundStyle(Ink.mute).lineSpacing(3)
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading).background(Ink.panel)
+                    .padding(.top, 12).fixedSize(horizontal: false, vertical: true)
             }
             if uploaded {
-                LineButton(title: "record another hike") { model.newHike() }.padding(.top, 32)
+                InkButton(title: "Record another hike") { model.newHike() }.padding(.top, 32)
+            } else {
+                Kicker(text: "Stuck on this hike?").padding(.top, 40).padding(.bottom, 10)
+                Text("Discarding deletes this recording from your phone. It can't be undone.")
+                    .font(.system(size: 13)).foregroundStyle(Ink.mute).padding(.bottom, 12)
+                HoldButton(title: "Hold to discard this hike") { model.discard() }
             }
         }
         .onAppear { if uploaded, let s { uploader.poll(s) } }
@@ -294,5 +403,5 @@ private func clock(_ secs: Double) -> String {
 private func time(_ unix: Double) -> String {
     let f = DateFormatter()
     f.dateFormat = "h:mm a"
-    return f.string(from: Date(timeIntervalSince1970: unix)).lowercased()
+    return f.string(from: Date(timeIntervalSince1970: unix))
 }

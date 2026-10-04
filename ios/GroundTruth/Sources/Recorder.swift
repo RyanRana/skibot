@@ -21,7 +21,7 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var uiTimer: Timer?
     private var onAuthorized: (() -> Void)?
 
-    static let deniedLocation = "location is off for ground truth. turn it on in settings > privacy & security > location services > ground truth > while using the app."
+    static let deniedLocation = "Location is off for ground truth. Turn it on in Settings > Privacy & Security > Location Services > ground truth > While Using the App."
 
     override init() {
         super.init()
@@ -78,7 +78,7 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
             motion.deviceMotionUpdateInterval = 1.0 / 100
             motion.startDeviceMotionUpdates(using: .xArbitraryCorrectedZVertical, to: sensorQueue) { [weak self, weak w] m, err in
                 guard let w, let m else {
-                    if let err { self?.report("motion: \(err.localizedDescription)") }
+                    if let err { self?.report("Motion: \(err.localizedDescription)") }
                     return
                 }
                 let g = 9.80665
@@ -89,20 +89,20 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
                       mag: f.accuracy == .uncalibrated ? nil : (f.field.x, f.field.y, f.field.z))
             }
         } else {
-            report("no motion sensors on this device (simulator?)")
+            report("No motion sensors on this device (simulator?)")
         }
 
         if CMAltimeter.isRelativeAltitudeAvailable() {
             altimeter.startRelativeAltitudeUpdates(to: sensorQueue) { [weak self, weak w] d, err in
                 guard let w, let d else {
-                    if let err { self?.report("barometer: \(err.localizedDescription) (motion & fitness permission?)") }
+                    if let err { self?.report("Barometer: \(err.localizedDescription) (Motion & Fitness permission?)") }
                     return
                 }
                 w.baro(t: unixTime(d.timestamp), relAlt: d.relativeAltitude.doubleValue, kpa: d.pressure.doubleValue,
                        absAlt: .nan, absAcc: .nan)
             }
         } else {
-            report("no barometer on this device")
+            report("No barometer on this device")
         }
         if CMAltimeter.isAbsoluteAltitudeAvailable() {
             altimeter.startAbsoluteAltitudeUpdates(to: sensorQueue) { [weak w] d, _ in
@@ -172,7 +172,7 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func locationManager(_ m: CLLocationManager, didFailWithError e: Error) {
         if (e as? CLError)?.code == .locationUnknown { return }  // transient, iOS keeps trying
-        report("gps: \(e.localizedDescription)")
+        report("GPS: \(e.localizedDescription)")
     }
 
     private func report(_ msg: String) {

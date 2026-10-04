@@ -206,20 +206,20 @@ def message(s: dict) -> str:
         parts.append(f"{s['distance_m'] / 1000:.2f} km")
     named = [n for n, _ in (s.get("trail_match") or {}).get("top") or [] if not n.startswith("unnamed")]
     if named:
-        parts.append(f"on {named[0].lower()}")
+        parts.append(f"on {named[0]}")
     gain = (s.get("climb_baro_m") or s.get("climb_dem_m") or {}).get("gain")
     if gain is not None:
         parts.append(f"+{gain:.0f} m")
     if s.get("duration_s"):
         m = int(s["duration_s"] // 60)
         parts.append(f"{m // 60}h{m % 60:02d}m" if m >= 60 else f"{m} min" if m else f"{s['duration_s']:.0f} s")
-    line1 = "ground truth: " + ", ".join(parts) if parts else "ground truth: hike received"
-    line2 = f"{s['imu']['samples']:,} motion samples at {s['imu']['rate_hz']:.0f} hz"
+    line1 = "Ground Truth: " + ", ".join(parts) if parts else "Ground Truth: hike received"
+    line2 = f"{s['imu']['samples']:,} motion samples at {s['imu']['rate_hz']:.0f} Hz"
     g = s["gaps"]
     line3 = "no gaps" if g["count"] == 0 else f"{g['count']} gap{'s' if g['count'] > 1 else ''} ({g['total_s']:.0f} s total)"
-    out = f"{line1}\n{line2}, {line3}.\nthank you, this hike is now robot training data."
+    out = f"{line1}\n{line2}, {line3}.\nThank you, this hike is now robot training data."
     if s["errors"]:
-        out += "\n(some steps failed on our side, we're on it)"
+        out += "\n(Some steps failed on our side. We're on it.)"
     return out
 
 

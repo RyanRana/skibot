@@ -186,7 +186,7 @@ for await (const [space, message] of app.messages) {
       for (const r of replies) await space.send(r)
     } catch (e) {
       console.error(`[agent] REPLY FAILED for ${key(from)}:`, e)
-      await space.send("sorry, something broke on our end. try again in a minute?").catch(() => {})
+      await space.send("Sorry, something broke on our end. Try again in a minute?").catch(() => {})
     }
   })
 }

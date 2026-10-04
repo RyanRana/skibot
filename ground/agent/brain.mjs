@@ -9,9 +9,9 @@ const CONFIRM = /^\s*(yes|y|yep|yeah|confirm|delete( it| everything)?|do it)\s*[
 const YES = /^\s*(y|ya|yes|yeah|yep|yup|sure|ok|okay|i'?m in|im in|let'?s go|down|do it|sounds good|send it)\b/i
 const LABEL_TTL_MS = 24 * 3600 * 1000
 
-const INTRO = "hey! this is ground truth. we turn how people move on real ground into training data for rescue robots. " +
-  "heading out on a hike? reply yes and i'll send the app link: your phone records your motion and gps while you hike, " +
-  "nothing else. at our table? text ski for a code to race the streif with your body."
+const INTRO = "Hi, this is Ground Truth from Hazard Intelligence. We turn how people move on real ground into training data " +
+  "for rescue robots.\n\nHeading out on a hike? Reply YES and I'll send the app link. Your phone records your motion and " +
+  "GPS while you hike, nothing else. At our table? Text SKI for a code to race the Streif with your body."
 
 // The ski game's commands (the game, board and challenges live in the team's SpacetimeDB module).
 const SKI = ['ski', 'play', 'game']
@@ -24,9 +24,9 @@ const fmtTime = (ms) => `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFix
 const num = (x) => Number(x).toLocaleString('en-US')
 
 const FOLLOWUPS = [
-  "quick one: anything tricky out there? mud, loose rock, a slip, a stream crossing? whatever you tell me gets attached to this hike.",
-  "how was the ground today? any slick spots, scrambles or places you slowed down? i'll attach it to the hike.",
-  "anything worth noting about the trail? wet roots, scree, a sketchy descent? it helps the robots know what they're looking at.",
+  "Quick one: anything tricky out there? Mud, loose rock, a slip, a stream crossing? Whatever you tell me gets attached to this hike.",
+  "How was the ground today? Any slick spots, scrambles or places you slowed down? I'll attach it to the hike.",
+  "Anything worth noting about the trail? Wet roots, scree, a sketchy descent? It helps the robots know what they're looking at.",
 ]
 
 const FACTS = `what ground truth is:
@@ -66,7 +66,7 @@ function systemPrompt(p, extra) {
 ${FACTS}
 
 how you text:
-- like a friendly person texting, all lowercase, usually 1-2 short sentences. no markdown, no lists, no headers. emojis rarely.
+- like a friendly person texting, in normal sentence case, usually 1-2 short sentences. no markdown, no lists, no headers. emojis rarely.
 - warm and direct, a little playful about hiking. never pushy: if they're not interested, that's fine.
 - you can make small talk about hiking, trails, gear or robots, but keep it short and don't pretend to know their area.
 - if they mention an injury, being lost or an emergency, tell them to call 911 first, before anything else.
@@ -108,29 +108,29 @@ export function createBrain({ store, server, llm, mountain = null, log = console
       p.optedOut = true
       p.pendingDelete = false
       store.save()
-      return ["got it, you won't get any more texts from us unless you text first. text start to turn them back on."]
+      return ["Got it. You won't get any more texts from us unless you text first. Text START to turn them back on."]
     }
     if (START.test(text) && p.optedOut) {
       p.optedOut = false
       store.save()
-      return ["you're back on. text me anytime you head out on a trail."]
+      return ["You're back on. Text me anytime you head out on a trail."]
     }
     if (p.pendingDelete) {
       p.pendingDelete = false
       store.save()
-      if (!CONFIRM.test(text)) return ['ok, nothing deleted.']
+      if (!CONFIRM.test(text)) return ['Okay, nothing deleted.']
       const r = await server.deleteUser(handle)
       p.notes = []
       p.pendingLabel = null
       p.history = []
       store.save()
       const n = r.deleted.hikes
-      return [`done. deleted ${n} hike${n === 1 ? '' : 's'} and everything tied to your number on our side.`]
+      return [`Done. Deleted ${n} hike${n === 1 ? '' : 's'} and everything tied to your number on our side.`]
     }
     if (DELETE.test(text)) {
       p.pendingDelete = true
       store.save()
-      return ['just to be sure: this permanently deletes all your recorded hikes and anything you told me. reply yes to delete.']
+      return ['Just to be sure: this permanently deletes all your recorded hikes and anything you told me. Reply YES to delete.']
     }
 
     const game = await command(handle, text)
@@ -205,20 +205,20 @@ export function createBrain({ store, server, llm, mountain = null, log = console
   }
 
   async function scripted(p, handle, text, extra) {
-    if (extra) return ['thanks, added that to your hike.']
+    if (extra) return ['Thanks, added that to your hike.']
     if (/\b(how did|how was|last|latest|went)\b/i.test(text)) {
       const hikes = await server.hikes(handle)
-      return [hikes.length ? `your latest: ${hikeLine(hikes[0])}.` : "no hikes yet. reply hike when you're heading out and i'll send the link."]
+      return [hikes.length ? `Your latest: ${hikeLine(hikes[0])}.` : "No hikes yet. Reply HIKE when you're heading out and I'll send the link."]
     }
     if (YES.test(text) || /\b(hike|record|link|app|join|start)\b/i.test(text)) {
       const inv = await server.invite(handle, store.code(handle))
       p.invites += 1
       store.save()
-      return [`here's your link. it opens the app, then hit start when you're at the trailhead:\n\n${inv.link}`]
+      return [`Here's your link. It opens the app; hit Start when you're at the trailhead.\n\n${inv.link}`]
     }
     if (p.history.length <= 1) return [INTRO]
-    return ['i can send your hike app link (text hike), tell you about your last hike (text how did it go), get you a ski code ' +
-      '(text ski), show the fastest runs (top), or delete your data (text delete my data).']
+    return ['I can send your hike app link (text HIKE), tell you about your last hike (HOW DID IT GO), get you a ski code ' +
+      '(SKI), show the fastest runs (TOP), or delete your data (DELETE MY DATA).']
   }
 
   // ---------------------------------------------------------------- ski game commands
@@ -228,7 +228,7 @@ export function createBrain({ store, server, llm, mountain = null, log = console
     const arg = words.slice(1).join(' ').trim()
     const known = [SKI, TOP, STATS, MAP, CHALLENGE, ME].some((l) => l.includes(c))
     if (!known || (words.length > 3 && !CHALLENGE.includes(c))) return null  // "i'm going to ski tomorrow" is not a command
-    if (!mountain) return ["the ski game isn't connected right now. text hike if you're heading out on a trail."]
+    if (!mountain) return ["The ski game isn't connected right now. Text HIKE if you're heading out on a trail."]
     const { conn, gameUrl, boardUrl, course } = mountain
     const code = store.code(handle)
     const runs = () => [...conn.db.run.iter()].filter((r) => r.finished).sort((a, b) => a.timeMs - b.timeMs)
@@ -236,39 +236,39 @@ export function createBrain({ store, server, llm, mountain = null, log = console
 
     if (SKI.includes(c)) {
       const url = `${gameUrl}${gameUrl.includes('?') ? '&' : '?'}code=${code}`
-      return [`your code is ${code}. type it on the laptop with your name, stand two metres from the camera, and raise both ` +
-        `hands to start.\n\nlean to carve, crouch to tuck, hop to jump. i'll text your time when you cross the line.`, url]
+      return [`Your code is ${code}. Type it on the laptop with your name, stand two metres from the camera, and raise both ` +
+        `hands to start.\n\nLean to carve, crouch to tuck, hop to jump. I'll text your time when you cross the line.`, url]
     }
     if (TOP.includes(c)) {
       const top = runs().slice(0, 5)
-      return [top.length ? `fastest on the ${course.toLowerCase()}:\n` + top.map((r, i) => `${i + 1}. ${r.name} — ${fmtTime(r.timeMs)} · ${r.gatesHit}/${r.gatesTotal} gates`).join('\n')
-        : `nobody has finished the ${course.toLowerCase()} yet. text ski to be first.`]
+      return [top.length ? `Fastest on the ${course}:\n` + top.map((r, i) => `${i + 1}. ${r.name} — ${fmtTime(r.timeMs)} · ${r.gatesHit}/${r.gatesTotal} gates`).join('\n')
+        : `Nobody has finished the ${course} yet. Text SKI to be first.`]
     }
     if (STATS.includes(c)) {
       const s = conn.db.datasetStats.id.find(0)
       const h = conn.db.hikeStats.id.find(0)
       const ski = s ? `${num(s.samples)} ski motion samples from ${num(s.skiers)} skiers over ${num(s.runs)} runs` : 'no ski runs yet'
       const hikes = h && h.hikes > 0n ? `${num(h.hikes)} real hikes (${(h.meters / 1000).toFixed(1)} km, ${num(h.motionSamples)} motion samples) from ${num(h.hikers)} hikers` : 'no hikes yet'
-      return [`ground truth holds ${ski}, and ${hikes}. every run and every hike adds to it.`]
+      return [`Ground Truth holds ${ski}, and ${hikes}. Every run and every hike adds to it.`]
     }
     if (MAP.includes(c)) {
       const live = [...conn.db.skier.iter()].filter((x) => x.phase === 2)
       return [live.length ? `${live.length} skiing right now: ${live.map((x) => `${x.name} (${Math.round(x.speed * 3.6)} km/h, ${Math.round(x.progress * 100)}% down)`).join(', ')}.`
-        : 'nobody is on the course right now.', boardUrl]
+        : 'Nobody is on the course right now.', boardUrl]
     }
     if (CHALLENGE.includes(c)) {
       const p = me()
-      if (!p) return ['ski a run first so i know who you are: text ski, then type the code on the laptop.']
+      if (!p) return ['Ski a run first so I know who you are: text SKI, then type the code on the laptop.']
       const best = runs().find((r) => r.identity.isEqual(p.identity))
-      if (!best) return [`you haven't finished the ${course.toLowerCase()} yet. finish a run and you can challenge anyone with it.`]
-      if (!arg) return ['who? text challenge <name>, using the name they skied under.']
+      if (!best) return [`You haven't finished the ${course} yet. Finish a run and you can challenge anyone with it.`]
+      if (!arg) return ['Who? Text CHALLENGE <name>, using the name they skied under.']
       const target = [...conn.db.player.iter()].find((x) => x.name.toLowerCase() === arg.toLowerCase())
       await conn.reducers.createChallenge({ fromName: p.name, toName: target?.name ?? arg, course, targetTimeMs: best.timeMs })
-      return [target ? `done. ${target.name} has to beat your ${fmtTime(best.timeMs)} on the ${course.toLowerCase()}. i'll text you when they try.`
-        : `challenge posted for "${arg}". when they join under that name they'll see it on the start line.`]
+      return [target ? `Done. ${target.name} has to beat your ${fmtTime(best.timeMs)} on the ${course}. I'll text you when they try.`
+        : `Challenge posted for "${arg}". When they join under that name they'll see it on the start line.`]
     }
     const p = me()
-    return [`your code is ${code}${p ? `, skiing as ${p.name}, best ${p.bestTimeMs ? fmtTime(p.bestTimeMs) : 'no finish yet'}` : ''}.`]
+    return [`Your code is ${code}${p ? `, skiing as ${p.name}, best ${p.bestTimeMs ? fmtTime(p.bestTimeMs) : 'no finish yet'}` : ''}.`]
   }
 
   // ---------------------------------------------------------------- outbound from SpacetimeDB's outbox

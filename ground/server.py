@@ -229,34 +229,77 @@ def to_stdb(d: Path, s: dict, code: str | None, text: str) -> int:
     return db.push_samples(d.name, rows) if rows else 0
 
 
-PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ground truth</title><style>
-:root{--ink:#1a1a1a;--mute:#8a8a8a;--rule:#d8d8d4;--bg:#f7f7f4}
-body{margin:0;background:var(--bg);color:var(--ink);font:300 17px/1.5 -apple-system,system-ui,sans-serif}
-main{max-width:420px;margin:0 auto;padding:56px 24px}
-h1{font-weight:300;font-size:28px;margin:0 0 8px;letter-spacing:-.01em}
-p{color:var(--mute);margin:0 0 28px}
-a.b{display:block;text-align:center;padding:14px;border:1px solid var(--ink);color:var(--ink);text-decoration:none;margin-bottom:14px}
-.s{font-size:13px;color:var(--mute);border-top:1px solid var(--rule);padding-top:16px;margin-top:28px}
-</style></head><body><main>
-<h1>ground truth</h1>
-<p>record your hike with your phone's motion sensors so rescue robots can learn to move on real ground. you choose, you can delete it anytime.</p>
-<a class="b" href="__APP__">open ground truth</a>
-<div class="s">nothing happens? the app isn't installed on this phone yet. ask the team for the install link.</div>
-</main></body></html>"""
+# The Hazard Intelligence look (web/site.css), so the page the text links to feels like the site.
+SITE_CSS = """
+:root{--bg:#fff;--panel:#f7f7f5;--ink:#111315;--muted:#5f656b;--faint:#9a9fa5;--line:#e6e7e8;
+--serif:"Times New Roman",Times,serif;--sans:"Inter",system-ui,-apple-system,sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:560px;margin:0 auto;padding:0 clamp(20px,6vw,32px)}
+header{display:flex;align-items:baseline;justify-content:space-between;padding:22px 0}
+.logo{font:400 34px/1 var(--serif);letter-spacing:-.01em}
+.k{font:500 11px/1 var(--mono);letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+h1{font:400 clamp(40px,11vw,56px)/1.02 var(--serif);letter-spacing:-.02em;margin-top:clamp(28px,7vh,64px)}
+.lede{margin-top:18px;color:var(--muted);font-size:17px}
+"""
+
+PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ground Truth · Hazard Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>__CSS__
+.list{margin-top:36px;border-top:1px solid var(--ink)}
+.list div{display:flex;justify-content:space-between;gap:20px;align-items:baseline;padding:16px 0;border-bottom:1px solid var(--line)}
+.list b{font:400 21px/1.15 var(--serif)}
+.list span{color:var(--muted);font-size:15px;text-align:right}
+a.go{display:block;margin-top:32px;padding:16px;text-align:center;background:var(--ink);color:var(--bg);font-weight:500}
+.foot{margin:28px 0 48px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:13px}
+</style></head><body><div class="wrap">
+<header><span class="logo">Hi.</span><span class="k">Ground Truth</span></header>
+<h1>Your hike can teach a rescue robot.</h1>
+<p class="lede">Your phone records how you move on real ground while you hike. We rebuild that ground in physics and train robots on it.</p>
+<div class="list">
+<div><b>Recorded</b><span>Motion, GPS, altitude, steps</span></div>
+<div><b>Only while</b><span>You're on a hike you started</span></div>
+<div><b>Never</b><span>Contacts, photos, audio</span></div>
+<div><b>Delete</b><span>Anytime, just text us</span></div>
+</div>
+<a class="go" href="__APP__">Open Ground Truth</a>
+<p class="foot">Nothing happens? The app isn't on this phone yet. Ask the team for the install link.</p>
+</div></body></html>""".replace("__CSS__", SITE_CSS)
+
+EXPIRED = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ground Truth · Hazard Intelligence</title><style>__CSS__</style></head><body><div class="wrap">
+<header><span class="logo">Hi.</span><span class="k">Ground Truth</span></header>
+<h1>This link has expired.</h1><p class="lede">Text us "hike" and we'll send you a fresh one.</p>
+</div></body></html>""".replace("__CSS__", SITE_CSS)
 
 
-DASH = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ground truth</title><meta http-equiv="refresh" content="5"><style>
-body{margin:0;background:#f7f7f4;color:#1a1a1a;font:300 14px/1.5 -apple-system,system-ui,sans-serif}
-main{max-width:980px;margin:0 auto;padding:32px 20px}h1{font-weight:300;font-size:22px;margin:0 0 4px}
-.m{color:#8a8a8a;margin-bottom:24px}table{border-collapse:collapse;width:100%}
-td,th{border-bottom:1px solid #d8d8d4;padding:8px 10px 8px 0;text-align:left;vertical-align:top;font-weight:300}
-th{color:#8a8a8a}.bad{color:#b3261e}.w{overflow-x:auto}pre{margin:0;white-space:pre-wrap;font:12px ui-monospace,monospace}
-</style></head><body><main><h1>ground truth</h1><div class="m">__INFO__</div>
-<div class="w"><table><tr><th>session</th><th>status</th><th>motion</th><th>gaps</th><th>summary / errors</th><th>text</th></tr>__ROWS__</table></div>
-<h1 style="margin-top:36px">outbox</h1><div class="w"><table><tr><th>to</th><th>status</th><th>text</th></tr>__OUT__</table></div>
-</main></body></html>"""
+DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ground Truth · dashboard</title><meta http-equiv="refresh" content="5">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>__CSS__
+.wrap{max-width:1120px}
+h1{margin-top:28px;font-size:clamp(36px,5vw,56px)}
+h2{font:400 30px/1.1 var(--serif);margin-top:56px}
+.m{margin-top:14px;color:var(--muted);font-size:14px}
+.w{overflow-x:auto;margin-top:18px;border-top:1px solid var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+td,th{border-bottom:1px solid var(--line);padding:12px 14px 12px 0;text-align:left;vertical-align:top;font-weight:400}
+th{font:500 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding-top:16px}
+td:first-child{font-family:var(--mono);font-size:12.5px}
+.bad{color:#b3261e}
+pre{margin:0;white-space:pre-wrap;font:12.5px/1.6 var(--mono);color:var(--muted)}
+footer{margin:56px 0 40px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:13px}
+</style></head><body><div class="wrap">
+<header><span class="logo">Hi.</span><span class="k">Ground Truth · dashboard</span></header>
+<h1>Hikes</h1><div class="m">__INFO__</div>
+<div class="w"><table><tr><th>Session</th><th>Status</th><th>Motion</th><th>Gaps</th><th>Summary / errors</th><th>Text</th></tr>__ROWS__</table></div>
+<h2>Outbox</h2>
+<div class="w"><table><tr><th>To</th><th>Status</th><th>Text</th></tr>__OUT__</table></div>
+<footer>Refreshes every 5 s. Only visible on this Mac.</footer>
+</div></body></html>""".replace("__CSS__", SITE_CSS)
 
 
 def dashboard() -> str:
@@ -326,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, dashboard().encode(), "text/html; charset=utf-8")
         elif m := re.fullmatch(r"/g/([A-Za-z0-9_-]+)", p):
             if m.group(1) not in _load("invites.json", {}):
-                return self._send(404, b"<h1>this link has expired or is wrong</h1>", "text/html; charset=utf-8")
+                return self._send(404, EXPIRED.encode(), "text/html; charset=utf-8")
             app = f"groundtruth://join?token={m.group(1)}&server={quote(PUBLIC['url'] or '', safe='')}"
             self._send(200, PAGE.replace("__APP__", html.escape(app)).encode(), "text/html; charset=utf-8")
         elif m := re.fullmatch(r"/api/session/([A-Za-z0-9-]+)", p):
@@ -372,8 +415,8 @@ class Handler(BaseHTTPRequestHandler):
                 inv = new_invite(body["phone"], body.get("code"))
             except RuntimeError as e:
                 return self._err(500, str(e))
-            text = body.get("text") or (f"looks like you're heading out on a trail. want this one to help train rescue "
-                                        f"robots? tap to start recording: {inv['link']}")
+            text = body.get("text") or (f"Looks like you're heading out on a trail. Want this one to help train rescue "
+                                        f"robots? Tap to start recording: {inv['link']}")
             self._json({"invite": inv, "message": enqueue(body["phone"], text, kind="nudge")})
         elif p == "/api/label":
             sid, text = body.get("session", ""), (body.get("text") or "").strip()
