@@ -26,6 +26,7 @@ struct SessionState: Codable {
     var distance: Double = 0
     var pedometer: [String: Double]?
     var warnings: [String] = []
+    var climb: Double?  // metres gained, from the barometer
 }
 
 enum SessionStore {

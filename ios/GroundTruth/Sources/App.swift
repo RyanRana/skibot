@@ -53,6 +53,11 @@ final class AppModel: ObservableObject {
     /// consent, start, end and upload calls the buttons do.
     private func autopilot() async {
         let args = ProcessInfo.processInfo.arguments
+        if args.contains("-GTDiscard") {
+            try? await Task.sleep(for: .seconds(4))
+            discard()
+            return
+        }
         guard let i = args.firstIndex(of: "-GTAutopilot"), i + 1 < args.count, let secs = Double(args[i + 1]) else { return }
         if let j = args.firstIndex(of: "-GTJoin"), j + 1 < args.count, let u = URL(string: args[j + 1]) {
             try? await Task.sleep(for: .seconds(2))
@@ -64,7 +69,7 @@ final class AppModel: ObservableObject {
         try? await Task.sleep(for: .seconds(3))
         start()
         try? await Task.sleep(for: .seconds(secs))
-        await end()
+        if args.contains("-GTDiscardRecording") { await discardRecording() } else { await end() }  // the two hold buttons
     }
     #endif
 
@@ -85,7 +90,7 @@ final class AppModel: ObservableObject {
         let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         guard url.host == "join", let token = q.first(where: { $0.name == "token" })?.value,
               let server = q.first(where: { $0.name == "server" })?.value, !server.isEmpty else {
-            error = "that link is missing its invite. open the newest link from your messages."
+            error = "That link is missing its invite. Open the newest link from your messages."
             return
         }
         if recorder.running { return }
@@ -106,7 +111,7 @@ final class AppModel: ObservableObject {
         let base = server.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         do {
             let j = try await post(base + "/api/invite", [:])
-            guard let token = j["token"] as? String else { throw Fail("server gave no token") }
+            guard let token = j["token"] as? String else { throw Fail("The server gave no token.") }
             invite = Invite(token: token, server: base)
         } catch {
             self.error = describe(error)
@@ -145,7 +150,7 @@ final class AppModel: ObservableObject {
         do {
             try SessionStore.writeMeta(s)
         } catch {
-            self.error = "could not write the session summary: \(error.localizedDescription)"
+            self.error = "Could not write the session summary: \(error.localizedDescription)"
         }
         session = s
         uploader.upload(s)
@@ -160,8 +165,46 @@ final class AppModel: ObservableObject {
         error = nil
     }
 
+    /// Where the back arrow can take you: from the placement screen to consent, from consent to waiting for an invite.
+    var canGoBack: Bool { !recorder.running && (stage == .setup || stage == .consent) }
+
+    /// One step back. Leaving the placement screen drops the consented session (nothing is recorded yet; a fresh consent
+    /// is sent if they return). Leaving consent forgets the invite, so the next link or the testing field sets a new one,
+    /// which is also the way out when a stored server address has gone stale.
+    func back() {
+        guard canGoBack else { return }
+        switch stage {
+        case .setup:
+            if let s = session { try? FileManager.default.removeItem(at: SessionStore.root.appendingPathComponent(s.id)) }
+            session = nil
+        case .consent:
+            invite = nil
+        default:
+            break
+        }
+        error = nil
+    }
+
+    /// "Hold to discard" while recording: stops the sensors and deletes everything recorded, nothing is sent.
+    func discardRecording() async {
+        busy = true
+        defer { busy = false }
+        _ = await recorder.stop()
+        discard()
+    }
+
+    /// Gives up on a hike that can't finish uploading (the server was reset, or no longer knows it): deletes the
+    /// recording from this phone and goes back to the start. The button asks for a long press first.
+    func discard() {
+        guard let s = session else { return }
+        uploader.forget(s.id)
+        try? FileManager.default.removeItem(at: SessionStore.root.appendingPathComponent(s.id))
+        session = nil
+        error = nil
+    }
+
     private func post(_ url: String, _ body: [String: Any]) async throws -> [String: Any] {
-        guard let u = URL(string: url) else { throw Fail("bad server address: \(url)") }
+        guard let u = URL(string: url) else { throw Fail("Bad server address: \(url)") }
         var r = URLRequest(url: u, timeoutInterval: 20)
         r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -169,7 +212,7 @@ final class AppModel: ObservableObject {
         let (data, resp) = try await URLSession.shared.data(for: r)
         let j = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(code) else { throw Fail("server said \(code): \(j["error"] as? String ?? "no details")") }
+        guard (200..<300).contains(code) else { throw Fail("Server said \(code): \(j["error"] as? String ?? "no details")") }
         return j
     }
 }
@@ -179,4 +222,8 @@ struct Fail: Error, CustomStringConvertible {
     init(_ d: String) { description = d }
 }
 
-func describe(_ e: Error) -> String { (e as? Fail)?.description ?? e.localizedDescription.lowercased() }
+func describe(_ e: Error) -> String {
+    if let f = e as? Fail { return f.description }
+    if e is URLError { return "Can't connect right now. Try again." }  // server unreachable, offline, timed out
+    return e.localizedDescription
+}
