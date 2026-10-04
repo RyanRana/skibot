@@ -165,6 +165,26 @@ final class AppModel: ObservableObject {
         error = nil
     }
 
+    /// Where the back arrow can take you: from the placement screen to consent, from consent to waiting for an invite.
+    var canGoBack: Bool { !recorder.running && (stage == .setup || stage == .consent) }
+
+    /// One step back. Leaving the placement screen drops the consented session (nothing is recorded yet; a fresh consent
+    /// is sent if they return). Leaving consent forgets the invite, so the next link or the testing field sets a new one,
+    /// which is also the way out when a stored server address has gone stale.
+    func back() {
+        guard canGoBack else { return }
+        switch stage {
+        case .setup:
+            if let s = session { try? FileManager.default.removeItem(at: SessionStore.root.appendingPathComponent(s.id)) }
+            session = nil
+        case .consent:
+            invite = nil
+        default:
+            break
+        }
+        error = nil
+    }
+
     /// Gives up on a hike that can't finish uploading (the server was reset, or no longer knows it): deletes the
     /// recording from this phone and goes back to the start. The button asks for a long press first.
     func discard() {

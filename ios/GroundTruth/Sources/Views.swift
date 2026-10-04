@@ -25,11 +25,16 @@ struct RootView: View {
             Ink.bg.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .firstTextBaseline) {
+                    HStack(alignment: .center, spacing: 14) {
+                        if model.canGoBack {
+                            BackArrow { withAnimation(.easeOut(duration: 0.2)) { model.back() } }
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
                         Text("Hi.").font(serif(34))
                         Spacer()
                         Kicker(text: "Ground Truth")
                     }
+                    .animation(.easeOut(duration: 0.2), value: model.canGoBack)
                     .padding(.bottom, 44)
                     switch model.stage {
                     case .noInvite: NoInviteView()
@@ -90,6 +95,23 @@ struct Problem: View {
     let text: String
     var body: some View {
         Text(text).font(.system(size: 14)).foregroundStyle(Ink.bad).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The back arrow: a thin arrow in a hairline-ruled square, the weight of the site's rules.
+struct BackArrow: View {
+    let action: () -> Void
+    @Environment(\.displayScale) var scale
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.left").font(.system(size: 16, weight: .regular))
+                .frame(width: 40, height: 40)
+                .foregroundStyle(Ink.text)
+                .overlay(Rectangle().stroke(Ink.line, lineWidth: 1 / scale))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
     }
 }
 
