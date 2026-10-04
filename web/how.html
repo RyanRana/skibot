@@ -288,7 +288,7 @@ sketch("d-robot", 1100, 670, D => {
 });
 
 /* 02 · The maps */
-sketch("d-maps", 1100, 660, D => {
+sketch("d-maps", 1100, 760, D => {
   D.box(30, 50, 210, 90, { label: "\"Bormio, stelvio\"", sub: "type any place", fill: YELLOW, fillStyle: "solid", size: 20 });
   D.arrow(244, 95, 296, 95, { bend: 4 });
   D.box(300, 55, 150, 80, { label: "find it", sub: "geocode", size: 22 });
@@ -336,6 +336,12 @@ sketch("d-maps", 1100, 660, D => {
   D.text(816, 520, "remix it: bumps, moguls,\njumps, chutes, side tilt", { size: 17 });
   D.text(816, 572, "128 practice tiles · 4.5° to 42°", { size: 15, color: MUTED });
   D.note(410, 600, 300, 52, "25 ski runs + 6 Ann Arbor trails", { rot: -1.5, size: 17 });
+
+  // how the ground feels
+  D.box(30, 640, 330, 96, { label: "6 snow types", sub: "groomed · ice · hardpack\nsoft · slush · powder", size: 21, fill: BLUE, gap: 9 });
+  D.arrow(110, 590, 130, 636, { bend: 6, color: MUTED });
+  D.box(740, 640, 330, 96, { label: "trail ground (next)", sub: "dry · wet rock · mud, each its own grip\nset from recent rain and frost, weather API", size: 21 });
+  D.arrow(900, 590, 900, 636, { bend: -6, dash: [8, 7], color: MUTED });
 });
 
 /* 04 · Training */
