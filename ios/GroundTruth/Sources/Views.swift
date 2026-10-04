@@ -179,6 +179,23 @@ struct Row: View {
     }
 }
 
+/// A row with the detail under the name, smaller and muted (the consent screen's list of sensors).
+struct StackedRow: View {
+    let label: String
+    let detail: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label).font(serif(20))
+                Text(detail).font(.system(size: 13)).foregroundStyle(Ink.mute)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            Hairline()
+        }
+    }
+}
+
 /// A stat in the site's ledger: mono label, big serif number, muted note.
 struct Stat: View {
     let label: String
@@ -246,16 +263,16 @@ struct ConsentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Title(text: "Your hike can teach a rescue robot.")
-            Lede(text: "Robots learn how people move on real ground, mud, scree, roots and switchbacks, from hikes like yours.")
-            Kicker(text: "What we track").padding(.top, 40).padding(.bottom, 12)
+            Title(text: "You move. The robot learns.")
+            Lede(text: "Hike or ski with your phone. Your motion on real terrain helps robots learn to move like people.")
+            Kicker(text: "What we record").padding(.top, 40).padding(.bottom, 12)
             RuledList {
-                Row(label: "Motion", value: "Accelerometer and gyroscope")
-                Row(label: "Location", value: "GPS")
-                Row(label: "Altitude", value: "Barometer")
-                Row(label: "Steps", value: "Step count")
+                StackedRow(label: "Motion", detail: "Accelerometer and gyroscope")
+                StackedRow(label: "Location", detail: "GPS")
+                StackedRow(label: "Altitude", detail: "Barometer")
+                StackedRow(label: "Steps", detail: "Step count")
             }
-            InkButton(title: "I'm in", disabled: model.busy) {
+            InkButton(title: "Start recording", disabled: model.busy) {
                 Task { model.busy = true; await model.consent(); model.busy = false }
             }
             .padding(.top, 32)

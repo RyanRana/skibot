@@ -29,7 +29,7 @@ try {
   // ---------------------------------------------------------- scripted (no grok)
   const s = createBrain({ store, server, llm: null })
   let out = await s.handle(PHONE, 'hi')
-  assert.match(out[0], /ground truth/i); assert.match(out[0], /reply yes/i)
+  assert.match(out[0], /hazard intelligence/i); assert.match(out[0], /reply yes/i)
   ok('first text gets the intro')
   out = await s.handle(PHONE, 'yes!')
   assert.match(out[0], /\/g\/[A-Za-z0-9_-]+/i)

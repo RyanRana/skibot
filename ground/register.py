@@ -22,6 +22,7 @@ MAX_HACC_M = 30.0       # drop GPS fixes worse than this
 MATCH_M = 25.0          # map matching radius to a trail centerline
 GAP_S = 0.5             # a hole in the 100 Hz motion stream longer than this is a gap
 CLIMB_HYST_M = 2.0      # hysteresis when summing elevation gain, so sensor noise does not count as climbing
+TRAIL_NAMES = Path(__file__).resolve().parent.parent / "out" / "ground" / "trail_names.json"  # {"<osm way id>": "name"} for ways OSM leaves unnamed
 TRIM_M = 200.0          # the shareable track leaves out this much at each end, so no one's home shows up
 OVERPASS_MIRRORS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
                     "https://overpass.private.coffee/api/interpreter"]
@@ -68,6 +69,9 @@ def parse_trails(osm: dict) -> list[dict]:
     for wid, nm in rel_name.items():
         if wid in ways and not ways[wid]["name"]:
             ways[wid]["name"] = nm
+    local = json.loads(TRAIL_NAMES.read_text()) if TRAIL_NAMES.exists() else {}
+    for w in ways.values():
+        w["name"] = w["name"] or local.get(str(w["id"]))
     return list(ways.values())
 
 
@@ -173,6 +177,8 @@ def register(d: Path) -> dict:
                                     "median_offset_m": round(float(np.median(dist)), 1)}
                 names = Counter(trails[i]["name"] or f"unnamed {trails[i]['highway']}" for i in own[hit])
                 s["trail_match"]["top"] = [[n, round(c / len(own), 3)] for n, c in names.most_common(5)]
+                s["trail_match"]["ways"] = [[int(trails[i]["id"]), trails[i]["name"] or f"unnamed {trails[i]['highway']}"]
+                                            for i, _ in Counter(own[hit].tolist()).most_common(5)]
                 for key in ("sac_scale", "surface", "highway"):
                     vals = Counter(trails[i][key] for i in own[hit] if trails[i][key])
                     s["trail_match"][key] = [[v, round(c / len(own), 3)] for v, c in vals.most_common(4)]
@@ -213,7 +219,7 @@ def message(s: dict) -> str:
     if s.get("duration_s"):
         m = int(s["duration_s"] // 60)
         parts.append(f"{m // 60}h{m % 60:02d}m" if m >= 60 else f"{m} min" if m else f"{s['duration_s']:.0f} s")
-    line1 = "Ground Truth: " + ", ".join(parts) if parts else "Ground Truth: hike received"
+    line1 = "Hazard Intelligence: " + ", ".join(parts) if parts else "Hazard Intelligence: hike received"
     line2 = f"{s['imu']['samples']:,} motion readings at {s['imu']['rate_hz']:.0f} Hz"
     g = s["gaps"]
     line3 = "no gaps" if g["count"] == 0 else f"{g['count']} gap{'s' if g['count'] > 1 else ''} ({g['total_s']:.0f} s total)"

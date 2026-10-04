@@ -9,7 +9,7 @@ const CONFIRM = /^\s*(yes|y|yep|yeah|confirm|delete( it| everything)?|do it)\s*[
 const YES = /^\s*(y|ya|yes|yeah|yep|yup|sure|ok|okay|i'?m in|im in|let'?s go|down|do it|sounds good|send it)\b/i
 const LABEL_TTL_MS = 24 * 3600 * 1000
 
-const INTRO = "Hi, this is Ground Truth from Hazard Intelligence. We turn how people move on real ground into training data " +
+const INTRO = "Hi, this is Hazard Intelligence. We turn how people move on real ground into training data " +
   "for rescue robots.\n\nHeading out on a hike? Reply YES and I'll send the app link. Your phone records your motion and " +
   "GPS while you hike, nothing else. At our table? Text SKI for a code to race the Streif with your body."
 
@@ -29,8 +29,8 @@ const FOLLOWUPS = [
   "Anything worth noting about the trail? Wet roots, scree, a sketchy descent? It helps the robots know what they're looking at.",
 ]
 
-const FACTS = `what ground truth is:
-- hikers record a hike with the ground truth iphone app. it captures motion (accelerometer + gyroscope, 100 times a second), gps, altitude from the barometer, and steps.
+const FACTS = `what hazard intelligence is:
+- hikers record a hike with our iphone app. it captures motion (accelerometer + gyroscope, 100 times a second), gps, altitude from the barometer, and steps.
 - that data is matched to the exact trail and terrain, then used to train humanoid robots in simulation to move on real ground, so they can one day do search and rescue on trails.
 - recording only happens during a hike the person starts and ends in the app. it keeps going with the phone locked in a pocket, but stops if they swipe the app closed.
 - never recorded: contacts, photos, audio, messages.
@@ -43,7 +43,7 @@ const FACTS = `what ground truth is:
 const TOOLS = [
   { type: 'function', function: {
     name: 'send_invite',
-    description: 'Create this person\'s personal link that opens the ground truth app to record a hike. Use when they want to record, join, or ask for the link/app.',
+    description: 'Create this person\'s personal link that opens our app to record a hike. Use when they want to record, join, or ask for the link/app.',
     parameters: { type: 'object', properties: {}, additionalProperties: false } } },
   { type: 'function', function: {
     name: 'get_my_hikes',
@@ -61,7 +61,7 @@ const TOOLS = [
 
 function systemPrompt(p, extra) {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-  return `you are ground truth, texting someone over imessage. today is ${today}.
+  return `you are hazard intelligence, texting someone over imessage. today is ${today}.
 
 ${FACTS}
 
@@ -249,7 +249,7 @@ export function createBrain({ store, server, llm, mountain = null, log = console
       const h = conn.db.hikeStats.id.find(0)
       const ski = s ? `${num(s.samples)} ski motion samples from ${num(s.skiers)} skiers over ${num(s.runs)} runs` : 'no ski runs yet'
       const hikes = h && h.hikes > 0n ? `${num(h.hikes)} real hikes (${(h.meters / 1000).toFixed(1)} km, ${num(h.motionSamples)} motion readings) from ${num(h.hikers)} hikers` : 'no hikes yet'
-      return [`Ground Truth holds ${ski}, and ${hikes}. Every run and every hike adds to it.`]
+      return [`The Hazard Intelligence dataset holds ${ski}, and ${hikes}. Every run and every hike adds to it.`]
     }
     if (MAP.includes(c)) {
       const live = [...conn.db.skier.iter()].filter((x) => x.phase === 2)

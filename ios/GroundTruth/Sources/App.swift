@@ -222,4 +222,8 @@ struct Fail: Error, CustomStringConvertible {
     init(_ d: String) { description = d }
 }
 
-func describe(_ e: Error) -> String { (e as? Fail)?.description ?? e.localizedDescription }
+func describe(_ e: Error) -> String {
+    if let f = e as? Fail { return f.description }
+    if e is URLError { return "Can't connect right now. Try again." }  // server unreachable, offline, timed out
+    return e.localizedDescription
+}
