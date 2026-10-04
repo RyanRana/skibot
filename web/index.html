@@ -36,6 +36,15 @@
   .links a em { font-style: normal; font-size: 20px; }
   .links a video { grid-column: 2 / span 2; grid-row: 2; width: 100%; aspect-ratio: 16 / 9; display: block; background: var(--panel); margin: 4px 0 6px; }
   .links a.pending { pointer-events: none; }
+  .phone-in { display: grid; gap: 10px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .phone-in b { font: 400 clamp(22px, 2.4vw, 28px)/1.15 var(--serif); }
+  .phone-in > span, .phone-in .ok { color: var(--muted); font-size: 15px; }
+  .phone-in .row { display: flex; gap: 8px; max-width: 420px; }
+  .phone-in input[type=tel] { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); background: var(--bg); color: inherit; }
+  .phone-in button { font: inherit; padding: 10px 16px; border: 0; color: var(--bg); background: var(--ink); cursor: pointer; }
+  .phone-in button:disabled { opacity: 0.5; cursor: default; }
+  .phone-in .ok { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+  .phone-in .msg { margin: 0; font: 500 12px/1.4 var(--mono); min-height: 1em; }
   .links a.pending b, .links a.pending span { opacity: 0.4; }
   .links a.pending em { color: var(--faint); font: 500 11px/1 var(--mono); letter-spacing: 0.1em; }
   .use-block { margin-top: 40px; }
@@ -131,7 +140,10 @@
         <a data-link="video" class="with-video"><b>Train from videos</b><span>Paste any ski or hike video. We pull the body motion out and the robot learns from it.</span><em>→</em>
           <video src="media/video_train.mp4" poster="media/video_train.jpg" autoplay muted loop playsinline aria-label="A GoPro ski run with 3D pose on the left and the G1 copying the same carve on the right"></video></a>
         <a data-link="game"><b>Train from gameplay</b><span>Ski in front of your webcam. Your motion capture becomes training data, and the robot copies you live.</span><em>→</em></a>
-        <a data-link="phone"><b>Train from your iPhone</b><span>Text to opt in. Your phone quietly records motion and GPS on every run and hike.</span><em>→</em></a>
+        <form class="phone-in" id="phone-in"><b>Train from your iPhone</b><span>Put in your number and you'll get a text in a few seconds. Tap it once, and your phone quietly records motion and GPS on every run and hike from then on.</span>
+          <div class="row"><input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="(555) 555-0123" required aria-label="Your mobile number"><button type="submit">Text me</button></div>
+          <label class="ok"><input type="checkbox" name="consent" required> Text me about Ground Truth. Reply STOP anytime; "delete my data" removes everything.</label>
+          <p class="msg" role="status" aria-live="polite"></p></form>
       </div>
     </div>
 
@@ -206,10 +218,27 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
   const LINKS = {
     video: "",  // video upload
     game: "/game/",   // webcam ski game (game/, built into /game by web/build.sh)
-    phone: "",  // iMessage opt-in for passive phone data
   };
+  // The phone server's public URL (ground/server.py behind cloudflared). It queues the welcome text the Photon agent sends.
+  const SIGNUP_URL = "";
   const API_HOST = "https://ryanrana04--hazard-intelligence-api-api.modal.run";  // policy API base URL
   document.getElementById("api-host").textContent = API_HOST;
+  const form = document.getElementById("phone-in"), msg = form.querySelector(".msg"), btn = form.querySelector("button");
+  if (!SIGNUP_URL) { btn.disabled = true; msg.textContent = "Sign-ups open when the phone server is live."; }
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!SIGNUP_URL) return;
+    btn.disabled = true; msg.textContent = "Sending…";
+    try {
+      const r = await fetch(SIGNUP_URL.replace(/\/$/, "") + "/api/signup", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: form.phone.value, consent: form.consent.checked }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      msg.textContent = j.already ? "Already sent. Check your messages." : "Sent. Check your messages in a few seconds.";
+      form.phone.value = "";
+    } catch (err) { msg.textContent = `Couldn't send: ${err.message}`; }
+    btn.disabled = false;
+  });
   document.querySelectorAll("[data-link]").forEach(a => {
     const url = LINKS[a.dataset.link];
     if (url) { a.href = url; if (/^https?:/.test(url)) a.target = "_blank"; }

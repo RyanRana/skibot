@@ -12,6 +12,8 @@ agent sends from.
 - GET  /api/session/<id>                status and summary
 - GET  /api/outbox, POST /api/outbox/<id>/sent|failed   messages waiting for the Photon agent
 - GET  /api/user/<phone>                that person's hikes (the agent answers "how did my hike go" from this)
+- POST /api/signup {phone, consent}     public: the website's phone box. queues a welcome text with the app link;
+                                        rate limited per IP and per number, US numbers only
 - POST /api/trigger {phone}             new invite + a "want to record this one?" text (later: the app's geofence)
 - POST /api/label {session, text}       something the hiker told the agent about a hike ("slipped near the creek")
 - POST /api/delete {phone}              removes that person's hikes, invites and messages
@@ -41,6 +43,10 @@ OUT = ROOT / "out" / "ground"
 PORT = 8770
 CONSENT_VERSION = "gt-consent-1"
 SID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+SIGNUP_ORIGINS = {o.strip() for o in os.environ.get("GT_SIGNUP_ORIGINS", "*").split(",") if o.strip()}
+SIGNUP_IP_MAX, SIGNUP_IP_WINDOW = 5, 3600  # sign-ups per IP per hour
+SIGNUP_PHONE_WINDOW = 86400  # one welcome text per number per day
+SIGNUPS: dict[str, list[float]] = {}  # ip -> recent sign-up times (memory only)
 
 LOCK = threading.RLock()
 PUBLIC = {"url": None}
@@ -83,6 +89,32 @@ def enqueue(to: str | None, text: str, session: str | None = None, kind: str = "
         box.append(msg)
         _save("outbox.json", box)
         return msg
+
+
+def us_phone(raw) -> str | None:
+    """(919) 555-0123, 919-555-0123, +1 919 555 0123 -> +19195550123. Anything else is refused."""
+    d = re.sub(r"\D", "", str(raw or ""))
+    if len(d) == 11 and d[0] == "1":
+        d = d[1:]
+    return f"+1{d}" if len(d) == 10 and d[0] in "23456789" else None
+
+
+def signup(phone: str, ip: str) -> dict:
+    """The website's phone box. Same welcome as texting the agent: a link that opens the app, then it records ambiently."""
+    now = time.time()
+    with LOCK:
+        recent = [t for t in SIGNUPS.get(ip, []) if now - t < SIGNUP_IP_WINDOW]
+        if len(recent) >= SIGNUP_IP_MAX:
+            raise PermissionError("too many sign-ups from this network, try again in an hour")
+        for m in _load("outbox.json", []):
+            if m.get("kind") == "welcome" and same_phone(m["to"], phone) and now - m["created"] < SIGNUP_PHONE_WINDOW:
+                return {"ok": True, "already": True}
+        SIGNUPS[ip] = recent + [now]
+        inv = new_invite(phone)
+        enqueue(phone, "hi, it's ground truth. you signed up on the site to help teach rescue robots how people move on "
+                       f"real terrain. tap once to set up the app, then it records your hikes and runs on its own: {inv['link']}  "
+                       "text me anything about it, STOP to pause, or \"delete my data\" anytime.", kind="welcome")
+        return {"ok": True}
 
 
 def same_phone(a: str | None, b: str | None) -> bool:
@@ -295,8 +327,22 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *a):
         print(f"[ground] {self.command} {self.path} -> {a[1] if len(a) > 1 else ''}")
 
+    def _cors(self):
+        origin = self.headers.get("Origin", "")
+        if self.path.split("?")[0] == "/api/signup" and ("*" in SIGNUP_ORIGINS or origin in SIGNUP_ORIGINS):
+            self.send_header("Access-Control-Allow-Origin", origin or "*")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _send(self, code: int, body: bytes, ctype: str):
         self.send_response(code)
+        self._cors()
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
@@ -352,6 +398,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(new_invite(body.get("phone"), body.get("code")))
             except RuntimeError as e:
                 self._err(500, str(e))
+        elif p == "/api/signup":
+            phone = us_phone(body.get("phone"))
+            if not phone:
+                return self._err(400, "enter a US mobile number")
+            if body.get("consent") is not True:
+                return self._err(400, "consent required")
+            try:
+                self._json(signup(phone, self.headers.get("CF-Connecting-IP") or self.client_address[0]))
+            except PermissionError as e:
+                self._err(429, str(e))
+            except RuntimeError as e:
+                self._err(503, str(e))
         elif p == "/api/consent":
             tok, sid = body.get("token"), body.get("session_id", "")
             if tok not in _load("invites.json", {}):
