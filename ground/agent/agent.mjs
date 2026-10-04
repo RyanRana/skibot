@@ -1,5 +1,6 @@
-// Ground Truth agent on Photon Spectrum: talks with hikers over iMessage, sends their app link, sends the summary
-// when a hike is registered, asks about the trail and files the answer on that hike.
+// Ground Truth agent on Photon Spectrum, the one agent for the whole project: hikers get their app link and their
+// hike summary (then a question about the trail, filed on that hike); skiers at the table get a join code, their
+// time and finish photo, and challenges. Everything the team's SpacetimeDB module queues in its outbox is sent here.
 //
 //   node agent.mjs                       iMessage through Spectrum Cloud (SPECTRUM_PROJECT_ID / _SECRET)
 //   node agent.mjs --terminal            same agent, chat with it in this terminal (no Photon account needed)
@@ -7,7 +8,9 @@
 //                                        agent sends it; later the app's trailhead geofence does this)
 //
 // Settings come from the environment or ground/agent/.env: SPECTRUM_PROJECT_ID, SPECTRUM_PROJECT_SECRET,
-// XAI_API_KEY (Grok; without it replies are scripted), XAI_MODEL (default grok-4), GT_SERVER (default http://127.0.0.1:8770).
+// XAI_API_KEY (Grok; without it replies are scripted), XAI_MODEL (default grok-4), GT_SERVER (default http://127.0.0.1:8770),
+// STDB_URI (ws://127.0.0.1:3000 local, wss://maincloud.spacetimedb.com hosted; unset = no ski game), STDB_DB (ground-truth),
+// GAME_URL, BOARD_URL, COURSE_NAME (Streif).
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,7 +23,9 @@ if (existsSync(envPath)) {
   }
 }
 
-const { Spectrum } = await import('spectrum-ts')
+process.env.SPECTRUM_PROJECT_ID ||= process.env.PHOTON_PROJECT_ID  // the team's agent used these names
+process.env.SPECTRUM_PROJECT_SECRET ||= process.env.PHOTON_PROJECT_SECRET
+const { Spectrum, attachment } = await import('spectrum-ts')
 const { createBrain, grok } = await import('./brain.mjs')
 const { groundServer } = await import('./server.mjs')
 const { Store, key } = await import('./state.mjs')
@@ -30,7 +35,7 @@ const server = groundServer()
 if (process.argv[2] === 'nudge') {
   const to = process.argv[3]
   if (!to) { console.error('usage: node agent.mjs nudge +1XXXXXXXXXX'); process.exit(2) }
-  const r = await server.trigger(key(to))
+  const r = await server.trigger(key(to), new Store().code(key(to)))
   console.log(`[agent] queued a nudge to ${key(to)} with ${r.invite.link}. the running agent sends it within a few seconds.`)
   process.exit(0)
 }
@@ -57,7 +62,32 @@ if (useTerminal) {
 }
 
 const store = new Store()
-const brain = createBrain({ store, server, llm })
+
+// ------------------------------------------------------------------ the team's SpacetimeDB (ski game + hikes)
+const STDB_URI = process.env.STDB_URI
+const GAME_URL = process.env.GAME_URL || 'http://localhost:5173/'
+let mountain = null
+if (STDB_URI) {
+  const { DbConnection, tables } = await import('./module_bindings/index.ts')
+  const STDB_DB = process.env.STDB_DB || 'ground-truth'
+  const conn = DbConnection.builder().withUri(STDB_URI).withDatabaseName(STDB_DB).withConfirmedReads(false)
+    .onConnect((c, id) => {
+      console.log(`[stdb] connected to ${STDB_URI}/${STDB_DB} as ${id.toHexString().slice(0, 12)}`)
+      c.subscriptionBuilder()
+        .onApplied(() => { console.log('[stdb] synced'); drainStdb() })
+        .subscribe([tables.player, tables.run, tables.datasetStats, tables.hikeStats, tables.outbox, tables.challenge, tables.skier, tables.runPhoto])
+      c.db.outbox.onInsert(() => drainStdb())
+    })
+    .onConnectError((_c, e) => console.error(`[stdb] CONNECT ERROR to ${STDB_URI}/${STDB_DB}:`, e?.message || e))
+    .onDisconnect(() => console.error('[stdb] DISCONNECTED: ski results and hike summaries will not be sent until it reconnects'))
+    .build()
+  mountain = { conn, gameUrl: GAME_URL, boardUrl: process.env.BOARD_URL || new URL('board.html', GAME_URL).toString(),
+    course: process.env.COURSE_NAME || 'Streif' }
+} else {
+  console.warn('[agent] WARNING: no STDB_URI, so no ski game and hike summaries come only from the local server outbox')
+}
+
+const brain = createBrain({ store, server, llm, mountain })
 
 // One conversation at a time per person, everyone else in parallel.
 const queues = new Map()
@@ -67,13 +97,54 @@ function serial(id, fn) {
   return next
 }
 
-async function sendTo(handle, texts) {
+async function sendTo(handle, parts) {
   if (useTerminal) {
-    for (const t of texts) console.log(`\n[outbound to ${handle}] ${t}`)
+    for (const t of parts) console.log(`\n[outbound to ${handle}] ${typeof t === 'string' ? t : '[finish photo]'}`)
     return
   }
   const space = await im.space.create(handle)
-  for (const t of texts) await space.send(t)
+  for (const t of parts) {
+    if (typeof t === 'string') await space.send(t)
+    else await space.send(attachment(Buffer.from(t.photo, 'base64'), { name: 'finish.jpg', mimeType: 'image/jpeg' }))
+      .catch((e) => console.error(`[agent] PHOTO FAILED to ${handle}:`, e.message))
+  }
+}
+
+// Everything the SpacetimeDB module queued, sent once each, then marked sent in the database.
+const delivered = new Set()
+let draining = false
+async function drainStdb() {
+  if (!mountain || draining) return
+  draining = true
+  const { conn } = mountain
+  try {
+    for (const m of [...conn.db.outbox.iter()].filter((o) => !o.sent).sort((a, b) => Number(a.id - b.id))) {
+      if (delivered.has(m.id)) continue
+      let photo = null
+      if (m.kind === 'result' && m.ref) {  // the finish photo lands a moment after the result; wait up to 4 s
+        photo = conn.db.runPhoto.runKey.find(m.ref)?.jpeg ?? null
+        if (!photo && Date.now() - Number(m.createdAt.microsSinceUnixEpoch / 1000n) < 4000) { setTimeout(drainStdb, 1200); continue }
+      }
+      delivered.add(m.id)
+      const handle = store.byCode(m.joinCode)
+      if (!handle) {
+        console.error(`[agent] NO ONE HAS CODE ${m.joinCode}: ${m.kind} not sent (did they text ski or hike to this agent?)`)
+      } else {
+        await serial(key(handle), async () => {
+          try {
+            const out = brain.deliver(m, photo)
+            await sendTo(handle, out.parts)
+            console.log(`[agent] sent ${m.kind} to ${handle} (${m.joinCode})`)
+          } catch (e) {
+            console.error(`[agent] SEND FAILED for ${m.kind} to ${handle}:`, e.message)
+          }
+        })
+      }
+      await conn.reducers.markSent({ id: m.id }).catch((e) => console.error('[stdb] markSent failed:', e?.message || e))
+    }
+  } finally {
+    draining = false
+  }
 }
 
 // ------------------------------------------------------------------ outbox: summaries and nudges from the server

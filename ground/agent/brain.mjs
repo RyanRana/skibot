@@ -9,8 +9,19 @@ const CONFIRM = /^\s*(yes|y|yep|yeah|confirm|delete( it| everything)?|do it)\s*[
 const YES = /^\s*(y|ya|yes|yeah|yep|yup|sure|ok|okay|i'?m in|im in|let'?s go|down|do it|sounds good|send it)\b/i
 const LABEL_TTL_MS = 24 * 3600 * 1000
 
-const INTRO = "hey! this is ground truth. we turn hikes into training data for rescue robots: your phone records how you " +
-  "move on the trail while you hike, and nothing else. want in? reply yes and i'll send the app link."
+const INTRO = "hey! this is ground truth. we turn how people move on real ground into training data for rescue robots. " +
+  "heading out on a hike? reply yes and i'll send the app link: your phone records your motion and gps while you hike, " +
+  "nothing else. at our table? text ski for a code to race the streif with your body."
+
+// The ski game's commands (the game, board and challenges live in the team's SpacetimeDB module).
+const SKI = ['ski', 'play', 'game']
+const TOP = ['top', 'leaderboard', 'fastest', 'best']
+const STATS = ['stats', 'dataset', 'data', 'size']
+const MAP = ['map', 'mountain', 'live', 'who']
+const CHALLENGE = ['challenge', 'race', 'dare', 'beat']
+const ME = ['me', 'code', 'mycode']
+const fmtTime = (ms) => `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(2).padStart(5, '0')}`
+const num = (x) => Number(x).toLocaleString('en-US')
 
 const FOLLOWUPS = [
   "quick one: anything tricky out there? mud, loose rock, a slip, a stream crossing? whatever you tell me gets attached to this hike.",
@@ -26,7 +37,8 @@ const FACTS = `what ground truth is:
 - the first and last 200 m of every route are trimmed before anything is shown on a map, so no one's home shows up.
 - battery use is about like a fitness app.
 - after they end a hike, it uploads and a summary text arrives within a few minutes.
-- they can delete everything anytime by texting "delete my data", and stop texts with "stop".`
+- they can delete everything anytime by texting "delete my data", and stop texts with "stop".
+- at the demo table there is also a ski game: people text "ski" for a join code, race a real world cup piste with their body in front of a camera, and get their time texted back. game commands (ski, top, stats, map, challenge <name>, me) are handled outside of you; point people to them.`
 
 const TOOLS = [
   { type: 'function', function: {
@@ -78,7 +90,8 @@ function hikeLine(h) {
 const day = (t) => (t ? new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase() : 'recently')
 const dur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.floor(s / 60) % 60).padStart(2, '0')}m` : `${Math.max(1, Math.round(s / 60))} min`)
 
-export function createBrain({ store, server, llm, log = console }) {
+export function createBrain({ store, server, llm, mountain = null, log = console }) {
+  // mountain: { conn, gameUrl, boardUrl, course } when connected to the team's SpacetimeDB, else null.
   // ---------------------------------------------------------------- inbound
   async function handle(handle, raw) {
     const p = store.get(handle)
@@ -119,6 +132,9 @@ export function createBrain({ store, server, llm, log = console }) {
       store.save()
       return ['just to be sure: this permanently deletes all your recorded hikes and anything you told me. reply yes to delete.']
     }
+
+    const game = await command(handle, text)
+    if (game) return game
 
     let extra = ''
     if (p.pendingLabel && Date.now() - p.pendingLabel.at < LABEL_TTL_MS && !/\?\s*$/.test(text)) {
@@ -163,7 +179,7 @@ export function createBrain({ store, server, llm, log = console }) {
 
   async function tool(p, handle, name, args) {
     if (name === 'send_invite') {
-      const inv = await server.invite(handle)
+      const inv = await server.invite(handle, store.code(handle))
       p.invites += 1
       store.save()
       return { link: inv.link, note: 'include this exact link in your reply' }
@@ -190,18 +206,89 @@ export function createBrain({ store, server, llm, log = console }) {
 
   async function scripted(p, handle, text, extra) {
     if (extra) return ['thanks, added that to your hike.']
-    if (/\b(how did|how was|last|latest|stats|went)\b/i.test(text)) {
+    if (/\b(how did|how was|last|latest|went)\b/i.test(text)) {
       const hikes = await server.hikes(handle)
       return [hikes.length ? `your latest: ${hikeLine(hikes[0])}.` : "no hikes yet. reply hike when you're heading out and i'll send the link."]
     }
     if (YES.test(text) || /\b(hike|record|link|app|join|start)\b/i.test(text)) {
-      const inv = await server.invite(handle)
+      const inv = await server.invite(handle, store.code(handle))
       p.invites += 1
       store.save()
       return [`here's your link. it opens the app, then hit start when you're at the trailhead:\n\n${inv.link}`]
     }
     if (p.history.length <= 1) return [INTRO]
-    return ['i can send your app link (text hike), tell you about your last hike (text how did it go), or delete your data (text delete my data).']
+    return ['i can send your hike app link (text hike), tell you about your last hike (text how did it go), get you a ski code ' +
+      '(text ski), show the fastest runs (top), or delete your data (text delete my data).']
+  }
+
+  // ---------------------------------------------------------------- ski game commands
+  async function command(handle, text) {
+    const words = text.split(/\s+/)
+    const c = (words[0] || '').toLowerCase().replace(/[^a-z]/g, '')
+    const arg = words.slice(1).join(' ').trim()
+    const known = [SKI, TOP, STATS, MAP, CHALLENGE, ME].some((l) => l.includes(c))
+    if (!known || (words.length > 3 && !CHALLENGE.includes(c))) return null  // "i'm going to ski tomorrow" is not a command
+    if (!mountain) return ["the ski game isn't connected right now. text hike if you're heading out on a trail."]
+    const { conn, gameUrl, boardUrl, course } = mountain
+    const code = store.code(handle)
+    const runs = () => [...conn.db.run.iter()].filter((r) => r.finished).sort((a, b) => a.timeMs - b.timeMs)
+    const me = () => [...conn.db.player.iter()].find((x) => x.joinCode === code)
+
+    if (SKI.includes(c)) {
+      const url = `${gameUrl}${gameUrl.includes('?') ? '&' : '?'}code=${code}`
+      return [`your code is ${code}. type it on the laptop with your name, stand two metres from the camera, and raise both ` +
+        `hands to start.\n\nlean to carve, crouch to tuck, hop to jump. i'll text your time when you cross the line.`, url]
+    }
+    if (TOP.includes(c)) {
+      const top = runs().slice(0, 5)
+      return [top.length ? `fastest on the ${course.toLowerCase()}:\n` + top.map((r, i) => `${i + 1}. ${r.name} — ${fmtTime(r.timeMs)} · ${r.gatesHit}/${r.gatesTotal} gates`).join('\n')
+        : `nobody has finished the ${course.toLowerCase()} yet. text ski to be first.`]
+    }
+    if (STATS.includes(c)) {
+      const s = conn.db.datasetStats.id.find(0)
+      const h = conn.db.hikeStats.id.find(0)
+      const ski = s ? `${num(s.samples)} ski motion samples from ${num(s.skiers)} skiers over ${num(s.runs)} runs` : 'no ski runs yet'
+      const hikes = h && h.hikes > 0n ? `${num(h.hikes)} real hikes (${(h.meters / 1000).toFixed(1)} km, ${num(h.motionSamples)} motion samples) from ${num(h.hikers)} hikers` : 'no hikes yet'
+      return [`ground truth holds ${ski}, and ${hikes}. every run and every hike adds to it.`]
+    }
+    if (MAP.includes(c)) {
+      const live = [...conn.db.skier.iter()].filter((x) => x.phase === 2)
+      return [live.length ? `${live.length} skiing right now: ${live.map((x) => `${x.name} (${Math.round(x.speed * 3.6)} km/h, ${Math.round(x.progress * 100)}% down)`).join(', ')}.`
+        : 'nobody is on the course right now.', boardUrl]
+    }
+    if (CHALLENGE.includes(c)) {
+      const p = me()
+      if (!p) return ['ski a run first so i know who you are: text ski, then type the code on the laptop.']
+      const best = runs().find((r) => r.identity.isEqual(p.identity))
+      if (!best) return [`you haven't finished the ${course.toLowerCase()} yet. finish a run and you can challenge anyone with it.`]
+      if (!arg) return ['who? text challenge <name>, using the name they skied under.']
+      const target = [...conn.db.player.iter()].find((x) => x.name.toLowerCase() === arg.toLowerCase())
+      await conn.reducers.createChallenge({ fromName: p.name, toName: target?.name ?? arg, course, targetTimeMs: best.timeMs })
+      return [target ? `done. ${target.name} has to beat your ${fmtTime(best.timeMs)} on the ${course.toLowerCase()}. i'll text you when they try.`
+        : `challenge posted for "${arg}". when they join under that name they'll see it on the start line.`]
+    }
+    const p = me()
+    return [`your code is ${code}${p ? `, skiing as ${p.name}, best ${p.bestTimeMs ? fmtTime(p.bestTimeMs) : 'no finish yet'}` : ''}.`]
+  }
+
+  // ---------------------------------------------------------------- outbound from SpacetimeDB's outbox
+  // Rows are keyed by join code: ski results (with the finish photo), joins, challenges, and hike summaries.
+  // Returns null when no one here owns the code. Parts are strings, or { photo: base64 jpeg }.
+  function deliver(row, photoB64 = null) {
+    const handle = store.byCode(row.joinCode)
+    if (!handle) return null
+    const p = store.get(handle)
+    if (p.optedOut) throw new Error('opted out (texted stop)')
+    const parts = []
+    if (row.kind === 'result' && photoB64) parts.push({ photo: photoB64 })
+    parts.push(row.body)
+    if (row.kind === 'result' && mountain?.boardUrl) parts.push(mountain.boardUrl)
+    if (row.kind === 'hike' && row.ref) {
+      parts.push(FOLLOWUPS[Math.floor(Math.random() * FOLLOWUPS.length)])
+      p.pendingLabel = { session: row.ref, at: Date.now() }
+    }
+    for (const x of parts) if (typeof x === 'string') store.remember(handle, 'assistant', x)
+    return { handle, parts }
   }
 
   // ---------------------------------------------------------------- outbound (from the server's outbox)
@@ -217,7 +304,7 @@ export function createBrain({ store, server, llm, log = console }) {
     return texts
   }
 
-  return { handle, outbound }
+  return { handle, outbound, deliver }
 }
 
 /** Long replies become up to three bubbles, split on blank lines, like a person texting. */

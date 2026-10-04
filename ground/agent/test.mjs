@@ -89,6 +89,49 @@ try {
   assert.equal(store.get(PHONE).notes.length, 0)
   ok('yes deletes their hikes, invites and messages')
 
+  // ---------------------------------------------------------- ski game commands + SpacetimeDB outbox delivery
+  out = await s.handle(PHONE, 'ski')
+  assert.match(out[0], /isn't connected/)
+  ok('game commands say so loudly when there is no spacetimedb')
+  const me = { isEqual: (x) => x === me }, other = { isEqual: (x) => x === other }
+  const fakeConn = {
+    db: {
+      run: { iter: () => [{ finished: true, timeMs: 61230, name: 'Ryan', gatesHit: 20, gatesTotal: 22, identity: other }].values() },
+      player: { iter: () => [].values() }, skier: { iter: () => [].values() },
+      datasetStats: { id: { find: () => ({ samples: 5459n, skiers: 26, runs: 6n }) } },
+      hikeStats: { id: { find: () => ({ hikes: 2n, meters: 7100, motionSamples: 720000n, hikers: 1 }) } },
+    },
+    reducers: {},
+  }
+  const m = createBrain({ store, server, llm: null, mountain: { conn: fakeConn, gameUrl: 'http://game/', boardUrl: 'http://game/board.html', course: 'Streif' } })
+  out = await m.handle(PHONE, 'SKI')
+  const code = store.get(PHONE).code
+  assert.match(code, /^[A-Z2-9]{4}$/); assert.match(out[0], new RegExp(code)); assert.equal(out[1], `http://game/?code=${code}`)
+  ok('ski gives this person their join code and the game link')
+  out = await m.handle(PHONE, 'top')
+  assert.match(out[0], /1\. Ryan — 1:01\.23/)
+  out = await m.handle(PHONE, 'stats')
+  assert.match(out[0], /5,459 ski motion samples/); assert.match(out[0], /2 real hikes \(7\.1 km/)
+  ok('top and stats read the live database')
+  out = await m.handle(PHONE, "i'm going to ski tomorrow with my friends")
+  assert.doesNotMatch(out.join(' '), /your code is/)
+  ok('a sentence that mentions ski is not a command')
+  const inv2 = await server.invite(PHONE, code)
+  assert.equal(inv2.code, code)
+  ok('invites carry the join code to the server')
+
+  assert.equal(m.deliver({ joinCode: 'ZZZZ', kind: 'result', body: 'x' }), null)
+  ok('outbox rows for unknown codes are not sent to anyone')
+  let d = m.deliver({ joinCode: code.toLowerCase(), kind: 'result', body: 'Yashu: Streif in 1:05.10', ref: 'run1' }, 'AAAA')
+  assert.equal(d.handle, PHONE); assert.deepEqual(d.parts[0], { photo: 'AAAA' }); assert.equal(d.parts.at(-1), 'http://game/board.html')
+  ok('ski results go out with the finish photo and the board link')
+  const hikeSid = await consentedSession(PHONE)
+  d = m.deliver({ joinCode: code, kind: 'hike', body: 'ground truth: 5.20 km', ref: hikeSid })
+  assert.equal(d.parts.length, 2); assert.equal(store.get(PHONE).pendingLabel.session, hikeSid)
+  await m.handle(PHONE, 'muddy switchbacks after the bridge')
+  assert.deepEqual((await server.hikes(PHONE)).find((h) => h.session === hikeSid).labels, ['muddy switchbacks after the bridge'])
+  ok('hike summaries from the database ask the trail question, and the answer lands on that hike')
+
   console.log(`\n${passed} passed`)
 } finally {
   await server.deleteUser(PHONE).catch(() => {})

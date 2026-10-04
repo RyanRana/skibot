@@ -15,8 +15,8 @@ export function groundServer(base = process.env.GT_SERVER || 'http://127.0.0.1:8
   }
   return {
     base,
-    invite: (phone) => call('/api/invite', { phone }),
-    trigger: (phone, text) => call('/api/trigger', { phone, text }),
+    invite: (phone, code) => call('/api/invite', { phone, code }),
+    trigger: (phone, code, text) => call('/api/trigger', { phone, code, text }),
     hikes: async (phone) => (await call(`/api/user/${encodeURIComponent(phone)}`)).hikes,
     label: (session, text) => call('/api/label', { session, text, source: 'imessage' }),
     deleteUser: (phone) => call('/api/delete', { phone }),
