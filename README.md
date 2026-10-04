@@ -1,6 +1,6 @@
 # skibot
 
-Unitree G1 humanoids skiing real Olympic and World Cup pistes in MuJoCo. Type a resort name and the run's real slope becomes a MuJoCo heightfield. A pretrained whole body controller (NVIDIA GEAR-SONIC) keeps the robot moving like a person, and a small policy trained with PPO on thousands of parallel robots teaches it to ski: edge, carve through gates, hold speed and stay upright on terrain it has never seen.
+Unitree G1 humanoids skiing real Olympic and World Cup pistes in MuJoCo. Type a resort name and the run's real slope becomes a MuJoCo heightfield. A pretrained whole body controller (NVIDIA GEAR-SONIC) keeps the robot moving like a person, and a small policy trained with PPO on thousands of parallel robots teaches it to ski: edge, carve through gates, hold speed and stay upright on terrain it has never seen. 
 
 ## Results so far
 
