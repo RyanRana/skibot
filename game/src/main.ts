@@ -25,8 +25,6 @@ const ease = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3
 async function main() {
   const hud = new Hud();
   const status = (s: string) => { $('status').textContent = s; };
-  const agentNumber = import.meta.env.VITE_AGENT_NUMBER as string | undefined;
-  if (agentNumber) $('agent-number').textContent = agentNumber;
   const lowfx = params.has('lowfx');
   const noCam = params.has('nocam');
   const autopilot = params.has('autopilot');
@@ -65,14 +63,14 @@ async function main() {
   let phase: Phase = 'lobby';
   let state: SkierState = initialState(course);
   let gates = new GateTracker(course);
-  let name = '', joinCode = '', myColor = '#ff3b4e';
+  let name = '', myColor = '#ff3b4e';
   let raceT = 0, maxSpeed = 0, runKey = '', traceSeq = 0, lastTraceT = 0, samples = 0, finishedAt = 0, runStartWall = 0;
   let splits: number[] = [], streak = 0, bestStreak = 0, airStart = 0;
   let chunk: PoseSample[] = [];
   let countdownEnd = 0, countdownBeeps = 0;
   let introStart = 0; const INTRO_S = 6.5;
   let handsSince = 0;
-  let timeScale = 1, freeze = 0, trauma = 0, slowmoUntil = 0, orbitStart = 0, photoDue = 0, photoTaken = false;
+  let timeScale = 1, freeze = 0, trauma = 0, slowmoUntil = 0, orbitStart = 0;
   let cheersThisRun = 0, crowdMeter = 0;
   let camMode: 'chase' | 'front' | 'side' = (params.get('cam') as any) || 'chase';
   let best: Run | null = null; let ghostSamples: PoseSample[] = []; let ghostKey = '';
@@ -135,22 +133,20 @@ async function main() {
   }
 
   // ---- join ----
-  function join(n: string, code: string) {
+  function join(n: string) {
     name = n.trim().slice(0, 24) || 'Skier';
-    joinCode = code.trim().toUpperCase();
     audio.start();
     $('start').classList.add('hidden');
-    net.join(name, joinCode, courseName);
+    net.join(name, '', courseName);
     me.setBib(name, myColor, 1);
     startCamera();
     beginIntro();
-    const ch = net.challengesFor(name);
-    if (ch.length) setTimeout(() => hud.toast(`Challenge from ${ch[0].fromName}: beat ${fmtTime(ch[0].targetTimeMs)}`, 5000), INTRO_S * 1000);
   }
-  $('join-form').addEventListener('submit', e => { e.preventDefault(); join(($('name') as HTMLInputElement).value, ($('code') as HTMLInputElement).value); });
-  if (params.get('name')) ($('name') as HTMLInputElement).value = params.get('name')!;
-  if (params.get('code')) ($('code') as HTMLInputElement).value = params.get('code')!;
-  if (params.has('auto')) setTimeout(() => ($('join-form') as HTMLFormElement).requestSubmit(), 300);
+  const randomName = () => `Skier ${Math.floor(Math.random() * 90 + 10)}`;
+  // No lobby: drop straight onto the mountain.
+  setTimeout(() => join(params.get('name') || randomName()), 300);
+  const unlock = () => { audio.start(); removeEventListener('pointerdown', unlock); removeEventListener('keydown', unlock); };
+  addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
 
   addEventListener('keydown', e => {
     keys.add(e.key);
@@ -188,7 +184,7 @@ async function main() {
   function beginRace() {
     phase = 'racing';
     state = initialState(course); gates = new GateTracker(course);
-    raceT = 0; maxSpeed = 0; traceSeq = 0; samples = 0; chunk = []; lastTraceT = 0; splits = []; streak = 0; bestStreak = 0; photoTaken = false;
+    raceT = 0; maxSpeed = 0; traceSeq = 0; samples = 0; chunk = []; lastTraceT = 0; splits = []; streak = 0; bestStreak = 0;
     runStartWall = performance.now();
     runKey = `${name}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     world.trailL.reset(); world.trailR.reset();
@@ -213,7 +209,7 @@ async function main() {
     const deltaMs = leader ? timeMs - leader.timeMs : null;
     const myBest = runs.filter(r => net.me && r.identity.isEqual(net.me))[0];
     // feel: freeze, then slow motion with an orbit, confetti and the crowd
-    freeze = 0.15; slowmoUntil = performance.now() + 150 + 1200; orbitStart = performance.now(); photoDue = performance.now() + 900;
+    freeze = 0.15; slowmoUntil = performance.now() + 150 + 1200; orbitStart = performance.now();
     trauma = Math.max(trauma, 0.5);
     const f = course.finish; const fm = new THREE.Vector3((f.poles[0][0] + f.poles[1][0]) / 2, (f.poles[0][1] + f.poles[1][1]) / 2, (f.poles[0][2] + f.poles[1][2]) / 2 + 5);
     world.confetti.burst(fm, 300, 6);
@@ -238,7 +234,6 @@ async function main() {
   let frame = 0;
   let poseTarget: Record<string, number> = { ...SKI_STANCE };
   const inp: Input = { lean: 0, crouch: 0, jump: false };
-  const photoCanvas = document.createElement('canvas'); photoCanvas.width = 640; photoCanvas.height = 360;
 
   function tick() {
     requestAnimationFrame(tick);
@@ -265,7 +260,7 @@ async function main() {
     // hands up: start (held ~1.2 s) from lobby / ready / finished, skip the intro
     if (sig.handsUp) { if (!handsSince) handsSince = now; } else handsSince = 0;
     const held = handsSince ? now - handsSince : 0;
-    if (phase === 'lobby' && held > 1800) { join(($('name') as HTMLInputElement).value || `Skier ${Math.floor(Math.random() * 90 + 10)}`, ($('code') as HTMLInputElement).value); handsSince = 0; }
+    if (phase === 'lobby' && held > 1800) { join(randomName()); handsSince = 0; }
     if (phase === 'intro' && held > 600) endIntro();
     if (phase === 'ready') {
       if (held > 1200 || (autopilot && now > autoRestart)) startCountdown();
@@ -366,7 +361,6 @@ async function main() {
     world.update(wallDt, camera.position, timeScale);
     const speed01 = clamp01((state.speed - 6) / 22);
     post.render(wallDt, phase === 'racing' ? speed01 : speed01 * 0.4);
-    if (phase === 'finished' && !photoTaken && now > photoDue) takePhoto();
   }
 
   function onGateHit(k: number) {
@@ -488,18 +482,6 @@ async function main() {
     camera.rotateZ(-state.edge * 0.07 + shake.z * 0.3);
   }
 
-  function takePhoto() {
-    photoTaken = true;
-    try {
-      const g = photoCanvas.getContext('2d')!;
-      g.drawImage(renderer.domElement, 0, 0, photoCanvas.width, photoCanvas.height);
-      g.fillStyle = 'rgba(8,14,28,.6)'; g.fillRect(0, 300, 640, 60);
-      g.fillStyle = '#fff'; g.font = '900 28px system-ui'; g.fillText(fmtTime(Math.round(raceT * 1000) + gates.missed.filter(Boolean).length * MISS_PENALTY_MS), 16, 340);
-      g.font = '700 16px system-ui'; g.fillStyle = '#37e6a8'; g.fillText(`${name} · ${courseName} · Ground Truth`, 180, 338);
-      const data = photoCanvas.toDataURL('image/jpeg', 0.62);
-      net.pushPhoto(runKey, data.split(',')[1] ?? '');
-    } catch (e) { console.warn('photo', e); }
-  }
 
   /** Put a G1 on the snow: yaw from heading, up from the terrain normal, roll into the turn, skis on the surface. */
   function placeSkier(root: THREE.Object3D, g1: G1, x: number, y: number, z: number, heading: number, normal: readonly number[], edge: number, crouch: number, air: boolean, crashed: number) {

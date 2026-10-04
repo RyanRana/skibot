@@ -64,21 +64,7 @@
   <div class="intro" id="intro"></div>
 </div>
 
-<div id="start" class="overlay">
-  <div class="attract"><canvas id="attract-canvas" width="640" height="480"></canvas><div class="attract-label" id="attract-label">camera starting…</div></div>
-  <div class="card">
-    <div class="eyebrow">Ground Truth</div>
-    <h1>Ski the Streif with your body.</h1>
-    <p>Stand about two metres from the camera, whole body in frame. Lean to carve, crouch to tuck, hop to jump. The Unitree G1 copies you down the real Hahnenkamm, and every run grows the dataset.</p>
-    <form id="join-form">
-      <label>Your name<input id="name" maxlength="24" autocomplete="off" placeholder="Skier" required></label>
-      <label>Join code <small>(text SKI to <span id="agent-number">the iMessage agent</span>)</small><input id="code" maxlength="8" autocomplete="off" placeholder="optional"></label>
-      <button type="submit">Step onto the snow</button>
-    </form>
-    <div class="fine">Or raise both hands for two seconds. Keyboard: arrows lean, down crouches, space jumps, Enter starts, C camera, R restart, K recalibrate.</div>
-    <div class="fine" id="status">connecting…</div>
-  </div>
-</div>
+<div id="start" class="overlay hidden"><div class="fine" id="status"></div><canvas id="attract-canvas" width="640" height="480" hidden></canvas><div id="attract-label" hidden></div></div>
 
 <video id="cam" playsinline muted style="display:none"></video>
 <script type="module" src="/src/main.ts"></script>

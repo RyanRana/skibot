@@ -14,8 +14,6 @@ async function main() {
   $('b-resort').textContent = course.meta.resort; $('b-course').textContent = courseName;
   const dropM = course.meta.centerline[course.startIndex][2] - course.meta.centerline[course.finishIndex][2];
   $('b-stats').textContent = `${course.raceLength.toFixed(0)} m race on a ${course.meta.stats.length_m.toFixed(0)} m course · ${dropM.toFixed(0)} m drop · ${course.gates.length} gates · OpenStreetMap + AWS Terrain Tiles`;
-  const num = import.meta.env.VITE_AGENT_NUMBER as string | undefined;
-  if (num) $('b-number').textContent = num;
   const gameUrl = `${location.origin}/`;
   QRCode.toCanvas($('qr') as HTMLCanvasElement, gameUrl, { width: 160, margin: 1, color: { dark: '#f3f6fb', light: '#00000000' } }).catch(() => {});
 

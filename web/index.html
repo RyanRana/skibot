@@ -36,7 +36,8 @@
   .arch .arr { align-self: center; margin-top: -40px; font: 400 28px/1 var(--serif); color: var(--faint); }
   .arch figcaption { margin-top: 12px; color: var(--muted); font-size: 14px; }
   .arch figcaption b { display: block; margin-bottom: 4px; font: 500 11px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
-  .arch-more { display: inline-block; margin-top: 28px; }
+  .arch-more { display: inline-block; margin-top: 32px; font-size: 16px; }
+  section.edge { padding-top: clamp(56px, 9vh, 90px); }
   .thesis { margin-top: clamp(40px, 7vh, 64px); font: 400 clamp(24px, 2.8vw, 34px)/1.28 var(--serif); max-width: 40ch; }
   .thesis a { border-bottom: 1px solid var(--line); }
   .thesis a:hover { border-color: var(--ink); }
@@ -95,6 +96,7 @@
   .ground a:hover { padding-left: 8px; }
   .ground b { font: 400 clamp(34px, 5vw, 64px)/1.05 var(--serif); }
   .ground em { font: 500 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; font-style: normal; color: var(--faint); }
+  .ground a img { margin-left: auto; width: clamp(140px, 22vw, 280px); aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; align-self: center; }
   .ground li:not(.live) b { color: var(--faint); }
   .ground li.live b::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 10px; border-radius: 50%; background: var(--go); vertical-align: middle; }
   .ground li.live em { color: var(--go); }
@@ -116,7 +118,7 @@
 <div class="wrap">
   <header>
     <a class="logo" href="index.html">Hi.</a>
-    <nav class="nav"><a href="how.html">How it works</a><a href="#use">Data collection</a><a href="api.html">API</a></nav>
+    <nav class="nav"><a href="how.html">How it works</a><a href="#use">Data collection</a><a href="#models">Foundation models</a><a href="api.html">API</a></nav>
   </header>
 
   <section class="hero">
@@ -125,8 +127,8 @@
     <p class="lede">Hazard Intelligence records how people move on dangerous ground, rebuilds that exact ground in physics, and trains robots on it.</p>
 
     <div class="demos">
-      <video src="media/ski.mp4" poster="media/ski.jpg" autoplay muted loop playsinline aria-label="A Unitree G1 skiing Val d'Isère in simulation"></video>
-      <video src="media/hike.mp4" poster="media/hike.jpg" autoplay muted loop playsinline aria-label="A Unitree G1 hiking a lidar-mapped Ann Arbor trail in simulation"></video>
+      <video src="media/ski.mp4" poster="media/ski.jpg" autoplay muted loop playsinline aria-label="A Unitree G1 skiing the Truite run at Courchevel through slalom gates, in simulation"></video>
+      <video src="media/hike.mp4" poster="media/hike.jpg" autoplay muted loop playsinline aria-label="A Unitree G1 hiking a forest trail at Bird Hills Nature Area in Ann Arbor, in simulation"></video>
     </div>
 
     <div class="ledger">
@@ -157,10 +159,16 @@
       <div class="links">
         <a data-link="video" class="with-video"><b>Train from videos</b><span>Paste any ski or hike video. We pull the body motion out and the robot learns from it.</span><em>→</em>
           <video src="media/video_train.mp4" poster="media/video_train.jpg" autoplay muted loop playsinline aria-label="A GoPro ski run with 3D pose on the left and the G1 copying the same carve on the right"></video></a>
-        <a data-link="game"><b>Train from gameplay</b><span>Ski in front of your webcam. Your motion capture becomes training data, and the robot copies you live.</span><em>→</em></a>
+        <a data-link="game" class="with-video"><b>Train from gameplay</b><span>Ski in front of your webcam. Your motion capture becomes training data, and the robot copies you live.</span><em>→</em>
+          <video src="media/game_train.mp4" poster="media/game_train.jpg" autoplay muted loop playsinline aria-label="The webcam ski game: a player leans and the G1 copies them, then races down the Streif"></video></a>
         <a data-link="phone"><b>Train from your iPhone</b><span>Text to opt in. Your phone quietly records motion and GPS on every run and hike.</span><em>→</em></a>
       </div>
     </div>
+
+  </section>
+
+  <section class="use models" id="models">
+    <h2>Foundation models</h2>
 
     <div class="use-block">
       <span class="k">Run it · one robot, zero-shot</span>
@@ -212,8 +220,8 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
   <section class="terrain">
     <span class="k">Terrain</span>
     <ul class="ground">
-      <li class="live"><a href="api.html"><b>Snow</b><em>Use today →</em></a></li>
-      <li class="live"><a href="api.html"><b>Trails</b><em>Use today →</em></a></li>
+      <li class="live"><a href="api.html"><b>Snow</b><img src="media/rescue-snow.jpg" alt="Ski patrol hauling a rescue sled down a steep rocky slope" loading="lazy"><em>Use today →</em></a></li>
+      <li class="live"><a href="api.html"><b>Trails</b><img src="media/rescue-trail.jpg" alt="A rescue team carrying a litter up a steep forest trail" loading="lazy"><em>Use today →</em></a></li>
       <li><b>Rock climbing</b><em>Soon</em></li>
       <li><b>Ocean</b><em>Soon</em></li>
       <li><b>Mines</b><em>Soon</em></li>

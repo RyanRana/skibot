@@ -384,7 +384,7 @@ export class World {
   /** Sponsor-style banners along the right of the piste. */
   private buildBanners() {
     const c = this.course, cl = c.meta.centerline;
-    const texts = ['GROUND TRUTH', 'MHACKS 2026', 'SPACETIMEDB', 'PHOTON', 'KITZBÜHEL · STREIF', 'EVERY RUN GROWS THE DATASET'];
+    const texts = ['GROUND TRUTH', 'MHACKS 2026', 'SPACETIMEDB', 'KITZBÜHEL · STREIF', 'EVERY RUN GROWS THE DATASET'];
     const colors = ['#0b1220', '#1b4fd8', '#0b1220', '#101418', '#b3121f', '#0b1220'];
     const poleGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.5, 6); poleGeo.translate(0, 0.75, 0); poleGeo.rotateX(Math.PI / 2);
     const poleMat = new THREE.MeshStandardMaterial({ color: '#2a2f3a' });
