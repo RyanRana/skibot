@@ -68,7 +68,13 @@ export class Net {
               this.ev.changed?.();
             })
             .onError((_c: unknown, e?: unknown) => { console.error('subscription', e); this.set('subscription error'); })
-            .subscribe([tables.player, tables.skier, tables.run, tables.datasetStats, tables.feed, tables.challenge, tables.cheer, tables.vitalChunk]);
+            .subscribe([tables.player, tables.skier, tables.run, tables.datasetStats, tables.feed, tables.challenge, tables.cheer]);
+          // The hazard map's vitals on their own subscription: if a database has not been republished with
+          // vital_chunk yet, only the hazard map goes quiet, not the leaderboard and the live skiers.
+          conn.subscriptionBuilder()
+            .onApplied(() => this.ev.changed?.())
+            .onError((_c: unknown, e?: unknown) => console.warn('vitals subscription (republish the module for the hazard map)', e))
+            .subscribe([tables.vitalChunk]);
           conn.db.skier.onInsert((_c, r) => this.ev.skier?.('insert', r));
           conn.db.skier.onUpdate((_c, _o, r) => this.ev.skier?.('update', r));
           conn.db.skier.onDelete((_c, r) => this.ev.skier?.('delete', r));
