@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoPro Ski Data</title>
+<meta name="description" content="GoPro follow-cam ski runs, collected as YouTube links and turned into G1 joint angles frame by frame.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<style>
+  .intro { padding: clamp(36px, 7vh, 72px) 0 0; }
+  section.part { padding: clamp(48px, 8vh, 80px) 0 0; display: grid; grid-template-columns: 220px 1fr; gap: 24px; }
+  section.part > .k { padding-top: 6px; }
+  .dbcard { display: grid; grid-template-columns: 44px 1fr auto; gap: 18px; align-items: center; padding: 18px 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--line); transition: padding 0.2s; }
+  .dbcard:hover { padding-left: 10px; }
+  .dbcard svg { width: 40px; height: auto; }
+  .dbcard b { display: block; font: 400 22px/1.2 var(--serif); }
+  .dbcard span { display: block; margin-top: 4px; color: var(--muted); font-size: 14px; }
+  .dbcard em { font-style: normal; font-size: 20px; }
+  pre { background: var(--panel); padding: 18px 20px; overflow-x: auto; font: 400 13px/1.7 var(--mono); }
+  pre .c { color: var(--faint); }
+  .note { margin-top: 14px; color: var(--muted); font-size: 15px; max-width: 62ch; }
+  .note code { font: 400 13px var(--mono); }
+  .gh { display: inline-block; margin-top: 22px; font: 500 14px/1 var(--sans); border-bottom: 1px solid var(--accent); padding-bottom: 4px; }
+  .photon { display: flex; gap: 18px; align-items: center; }
+  .photon .mark { flex: none; width: 52px; height: 52px; border-radius: 50%; background: #000; display: grid; place-items: center; }
+  .photon .mark img { width: 100%; height: 100%; }
+  .photon p { color: var(--muted); max-width: 54ch; }
+  .photon p b { color: var(--ink); font-weight: 500; }
+  .soon { font: 500 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-left: 6px; }
+  footer { margin-top: clamp(64px, 10vh, 110px); }
+  @media (max-width: 820px) {
+    section.part { grid-template-columns: 1fr; gap: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="index.html">Hi.</a>
+    <nav class="nav"><a href="how.html">How it works</a><a href="index.html#use">Data collection</a><a href="index.html#models">Foundation models</a><a href="phone.html">App</a><a href="/game/">Game</a><a href="api.html">API</a></nav>
+  </header>
+
+  <section class="intro">
+    <div>
+      <h1>GoPro skiing, from YouTube</h1>
+      <p class="lede">We collect follow-cam GoPro ski runs as links, not files. Each link is pulled once, read with MediaPipe 3D pose, and turned into G1 joint angles, body lean and a virtual gyroscope, frame by frame.</p>
+    </div>
+  </section>
+
+  <section class="part">
+    <span class="k">Sources</span>
+    <div>
+      <a class="dbcard" href="https://github.com/RyanRana/skibot/blob/main/skisim/gopro_sources.csv" target="_blank" rel="noopener">
+        <svg viewBox="0 0 48 56" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="24" cy="10" rx="19" ry="6"/><path d="M5 10v36c0 3.3 8.5 6 19 6s19-2.7 19-6V10"/><path d="M5 22c0 3.3 8.5 6 19 6s19-2.7 19-6M5 34c0 3.3 8.5 6 19 6s19-2.7 19-6"/></svg>
+        <div><b>gopro_sources.csv</b><span>50 GoPro ski runs as YouTube links</span></div>
+        <em>→</em>
+      </a>
+    </div>
+  </section>
+
+  <section class="part">
+    <span class="k">Add a run</span>
+    <div>
+<pre><span class="c"># pull one link</span>
+yt-dlp -f mp4 -o "data/videos/gopro/%(id)s.mp4" https://youtu.be/&lt;id&gt;
+
+<span class="c"># pose → G1 joints, written to out/pose/pose_data_&lt;id&gt;.json</span>
+python -m skisim.pose_video data/videos/gopro/&lt;id&gt;.mp4 --title "FOLLOW CAM"</pre>
+      <p class="note">The video stays on the machine that ran it. What we keep is the link and the recording: <code>t, kL, kR, lean, gyro, phase, g1</code> per frame.</p>
+      <a class="gh" href="https://github.com/RyanRana/skibot/blob/main/skisim/pose_video.py" target="_blank" rel="noopener">See the code on GitHub →</a>
+    </div>
+  </section>
+
+  <section class="part">
+    <span class="k">Photon</span>
+    <div class="photon">
+      <span class="mark"><img src="media/photon.svg" alt=""></span>
+      <p><b>Text a GoPro link to Photon</b> and it joins the queue, then Photon texts back when its frames are in.<span class="soon">Next</span></p>
+    </div>
+  </section>
+
+  <footer>
+    <p>Videos belong to their creators and are linked, not hosted. Pose from MediaPipe; the G1 model is Unitree's (Apache 2.0).</p>
+    <span class="mono">Hazard Intelligence</span>
+  </footer>
+</div>
+</body>
+</html>
