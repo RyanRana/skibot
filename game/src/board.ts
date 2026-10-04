@@ -2,7 +2,7 @@
 // dataset counter and how to join. Meant for a second screen or a phone at the table.
 import QRCode from 'qrcode';
 import { loadCourse, type Course } from './course.ts';
-import { Net, fmtTime, fmtInt, colorOf, type Skier } from './net.ts';
+import { Net, fmtTime, fmtInt, colorOf, hazardMap, type Skier, type HazardBin } from './net.ts';
 import { esc } from './hud.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -14,8 +14,6 @@ async function main() {
   $('b-resort').textContent = course.meta.resort; $('b-course').textContent = courseName;
   const dropM = course.meta.centerline[course.startIndex][2] - course.meta.centerline[course.finishIndex][2];
   $('b-stats').textContent = `${course.raceLength.toFixed(0)} m race on a ${course.meta.stats.length_m.toFixed(0)} m course · ${dropM.toFixed(0)} m drop · ${course.gates.length} gates · OpenStreetMap + AWS Terrain Tiles`;
-  const num = import.meta.env.VITE_AGENT_NUMBER as string | undefined;
-  if (num) $('b-number').textContent = num;
   const gameUrl = `${location.origin}/`;
   QRCode.toCanvas($('qr') as HTMLCanvasElement, gameUrl, { width: 160, margin: 1, color: { dark: '#f3f6fb', light: '#00000000' } }).catch(() => {});
 
@@ -51,7 +49,12 @@ async function main() {
     });
   }
 
+  let hazards: HazardBin[] = [];
   function refresh() {
+    const chunks = net.vitals(courseName);
+    hazards = hazardMap(chunks);
+    const readings = chunks.reduce((n, c) => n + c.samples.length, 0), zones = hazards.filter(b => b.rise >= 0.06 && b.n >= 2);
+    $('b-hearts').textContent = readings ? `♥ ${fmtInt(readings)} heart readings from ${new Set(chunks.map(c => c.runKey)).size} runs · ${zones.length} hazard zone${zones.length === 1 ? '' : 's'}${zones.length ? ` · worst +${Math.round(Math.max(...zones.map(z => z.rise)) * 100)}%` : ''}` : '♥ no heart readings yet: ski a run facing the camera';
     const s = net.stats();
     $('b-samples').textContent = s ? fmtInt(s.samples) : '0';
     $('b-runs').textContent = s ? fmtInt(s.runs) : '0';
@@ -93,6 +96,16 @@ async function main() {
     cl.forEach((p, i) => { const [sx, sy] = toScreen(p[0], p[1], w, h); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
     ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 44 * scale; ctx.stroke();
     ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.2; ctx.stroke();
+    // Hazard Intelligence: the course coloured by how far above resting people's hearts ran there
+    for (const b of hazards) {
+      if (b.n < 2) continue;
+      const k = Math.max(0, Math.min(1, b.rise / 0.2));
+      ctx.beginPath(); let started = false;
+      for (const p of cl) { if (p[3] < b.s0 || p[3] > b.s1) continue; const [sx, sy] = toScreen(p[0], p[1], w, h); started ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); started = true; }
+      if (!started) continue;
+      ctx.strokeStyle = b.rise < 0.06 ? `rgba(61,255,200,${0.25 + 0.25 * (1 - k)})` : `rgba(255,${Math.round(180 - 120 * k)},${Math.round(64 - 30 * k)},${0.45 + 0.4 * k})`;
+      ctx.lineWidth = (b.rise < 0.06 ? 10 : 14 + 20 * k) * scale + 3; ctx.stroke();
+    }
     // gates
     for (const g of course.gates) {
       const [ax, ay] = toScreen(g.turn_pole[0], g.turn_pole[1], w, h), [bx, by] = toScreen(g.outer_pole[0], g.outer_pole[1], w, h);

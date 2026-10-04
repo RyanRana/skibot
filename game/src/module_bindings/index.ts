@@ -41,6 +41,7 @@ import LinkCodeReducer from "./link_code_reducer";
 import MarkSentReducer from "./mark_sent_reducer";
 import PushPhotoReducer from "./push_photo_reducer";
 import PushTraceReducer from "./push_trace_reducer";
+import PushVitalsReducer from "./push_vitals_reducer";
 import SendCheerReducer from "./send_cheer_reducer";
 import SetStateReducer from "./set_state_reducer";
 import StartRunReducer from "./start_run_reducer";
@@ -58,6 +59,7 @@ import RunRow from "./run_table";
 import RunPhotoRow from "./run_photo_table";
 import SkierRow from "./skier_table";
 import TraceChunkRow from "./trace_chunk_table";
+import VitalChunkRow from "./vital_chunk_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -192,6 +194,23 @@ const tablesSchema = __schema({
       { name: 'trace_chunk_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, TraceChunkRow),
+  vitalChunk: __table({
+    name: 'vital_chunk',
+    indexes: [
+      { accessor: 'course', name: 'vital_chunk_course_idx_btree', algorithm: 'btree', columns: [
+        'course',
+      ] },
+      { accessor: 'id', name: 'vital_chunk_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'runKey', name: 'vital_chunk_run_key_idx_btree', algorithm: 'btree', columns: [
+        'runKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'vital_chunk_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, VitalChunkRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -203,6 +222,7 @@ const reducersSchema = __reducers(
   __reducerSchema("mark_sent", MarkSentReducer),
   __reducerSchema("push_photo", PushPhotoReducer),
   __reducerSchema("push_trace", PushTraceReducer),
+  __reducerSchema("push_vitals", PushVitalsReducer),
   __reducerSchema("send_cheer", SendCheerReducer),
   __reducerSchema("set_state", SetStateReducer),
   __reducerSchema("start_run", StartRunReducer),

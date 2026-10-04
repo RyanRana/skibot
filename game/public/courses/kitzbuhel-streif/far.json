@@ -1,1 +1,1 @@
-{"x0": -10000.0, "y0": -10000.0, "cell": 60.0, "nrow": 334, "ncol": 334, "z_min": -647.9482421875, "z_max": 884.4197998046875, "z_datum_msl": 1304.79, "source": "AWS Terrain Tiles terrarium z11"}
+{"x0": -10000.0, "y0": -10000.0, "cell": 30.0, "nrow": 668, "ncol": 668, "z_min": -648.1802368164062, "z_max": 892.447509765625, "z_datum_msl": 1304.79, "source": "AWS Terrain Tiles terrarium z12"}

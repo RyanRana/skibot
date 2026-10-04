@@ -28,7 +28,7 @@ for (const mode of ['centerline', 'gates', 'straight']) {
       const err = Math.atan2(Math.sin(want - s.heading), Math.cos(want - s.heading));
       lean = Math.max(-1, Math.min(1, -err * 2.5 * Math.min(1, 12 / Math.max(6, s.speed))));
     }
-    step(s, { lean, crouch: Math.abs(lean) < 0.25 ? 0.9 : 0.3, jump }, dt, course); jump = false;
+    const crouch = Math.abs(lean) < 0.25 ? 0.9 : 0.3; step(s, { lean, crouch, jump, push: Math.max(0, (crouch - 0.45) / 0.55) }, dt, course); jump = false;
     gt.update(s.x, s.y, s.sAlong);
     maxV = Math.max(maxV, s.speed); t += dt; maxLat = Math.max(maxLat, Math.abs(s.lateral));
     if (s.air && !wasAir) airs++; wasAir = s.air;

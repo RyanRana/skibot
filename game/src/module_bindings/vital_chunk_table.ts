@@ -9,10 +9,19 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "spacetimedb";
+import {
+  VitalSample,
+} from "./types";
+
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  kind: __t.string(),
-  text: __t.string(),
+  runKey: __t.string().name("run_key"),
+  course: __t.string(),
+  name: __t.string(),
+  restHr: __t.f32().name("rest_hr"),
+  get samples() {
+    return __t.array(VitalSample);
+  },
   at: __t.timestamp(),
 });
