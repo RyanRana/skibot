@@ -101,10 +101,19 @@ def main():
           shutil.copy(out / "sheet_mid.jpg", SITE / "media" / "runs" / f"{name}_sheet.jpg")
           media["poster"] = f"media/runs/{name}_sheet.jpg"
         ev = json.loads((out / "eval.json").read_text())
+        diag = None
+        try:
+          subprocess.run([sys.executable, "-m", "train.diagnose", "--ckpt", str(p), "--terrain", str(ROOT / "out/terrains_v3"),
+                          "--envs", "32", "--episodes", "64", "--max-level", "40", "--out", str(out / "diag.json")],
+                         cwd=ROOT, capture_output=True, text=True, timeout=2400, env={**os.environ, "PYTHONPATH": str(ROOT)})
+          dd = json.loads((out / "diag.json").read_text())["summary"]
+          diag = {k: dd[k] for k in ("fall_rate", "mean_distance_m", "failure_kinds", "by_slope")}
+        except Exception as e:
+          print("diagnose failed:", repr(e), flush=True)
         entry = {
           "time": time.strftime("%Y-%m-%d %H:%M"), "run": p.parent.name, "iteration": it, "checkpoint": str(p),
           **{k: v for k, v in ev.items() if k not in ("per_tile", "checkpoint")}, "media": media,
-          "eval_seconds": round(time.time() - t0),
+          "eval_seconds": round(time.time() - t0), "diag": diag,
         }
         progress.append(entry)
         done.add(str(p))

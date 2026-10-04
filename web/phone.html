@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ground Truth</title>
+<meta name="description" content="Ground Truth: opt in by text, and your hike or ski day becomes walking data for humanoid robots. No app.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<style>
+  .hero { display: grid; grid-template-columns: 1fr auto; gap: clamp(32px, 6vw, 88px); align-items: center; padding: clamp(36px, 7vh, 72px) 0 clamp(56px, 9vh, 96px); }
+  .hero .k { display: block; margin-bottom: 18px; }
+  .partners { margin-top: 36px; max-width: 52ch; }
+  .partners p { margin-top: 10px; font: 400 clamp(22px, 2.4vw, 28px)/1.25 var(--serif); }
+  .partners p em { font-style: italic; }
+  .partners a.how { margin-left: 24px; }
+  .partners a { display: inline-block; margin-top: 16px; font: 500 14px/1 var(--sans); border-bottom: 1px solid var(--accent); padding-bottom: 4px; }
+
+  .hero h1 { font-size: clamp(32px, 4vw, 50px); line-height: 1.08; max-width: 18ch; }
+  .partners { margin-top: 40px; }
+  .b.link { padding: 0; overflow: hidden; width: 76%; display: block; margin-top: 3px; }
+  .b.link .card { display: grid; place-items: center; height: 38px; background: #fc5200; color: #fff; }
+  .b.link .card svg { width: 22px; height: 22px; }
+  .b.link.us .card { background: #000; }
+  .b.link.us .card img { width: 34px; height: 34px; }
+  .b.link .meta { display: block; padding: 6px 11px 7px; }
+  .b.link .meta b { display: block; font-size: 12.5px; font-weight: 600; }
+  .b.link .meta small { font-size: 11px; color: #8e8e93; }
+  /* right column: an iPhone 14 */
+  .device { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .iphone { --w: 330px; width: var(--w); height: calc(var(--w) * 2.165); padding: 12px; border-radius: 54px; background: #1c1d1f; box-shadow: inset 0 0 0 2px #3a3b3e, 0 30px 60px -20px rgba(0,0,0,0.35); position: relative; }
+  .screen { width: 100%; height: 100%; border-radius: 43px; overflow: hidden; background: #fff; display: flex; flex-direction: column; position: relative; font-family: -apple-system, "SF Pro Text", system-ui, sans-serif; }
+  .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 46%; height: 30px; background: #1c1d1f; border-radius: 0 0 18px 18px; z-index: 3; }
+  .status { display: flex; justify-content: space-between; align-items: center; padding: 14px 26px 0; height: 38px; font-size: 14px; font-weight: 600; color: #000; }
+  .status .icons { display: flex; gap: 5px; align-items: center; }
+  .thread-head { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0 8px; border-bottom: 0.5px solid #d8d8dc; background: #f6f6f8; }
+  .thread-head .avatar { width: 46px; height: 46px; border-radius: 50%; background: #000; color: #fff; display: grid; place-items: center; overflow: hidden; }
+  .thread-head .avatar img { width: 100%; height: 100%; }
+  .thread-head .name { font-size: 11.5px; color: #000; }
+  .thread-head .name::after { content: " ›"; color: #8e8e93; }
+  .msgs { flex: 1; min-height: 0; overflow: hidden; padding: 8px 12px 4px; display: flex; flex-direction: column; gap: 3px; }
+  .msgs > * { flex-shrink: 0; }   /* bubbles keep their size; overflow scrolls off the top like iMessage */
+  .stamp { align-self: center; font-size: 10.5px; color: #8e8e93; margin: 0 0 6px; }
+  .stamp b { font-weight: 600; }
+  .b { max-width: 76%; padding: 6px 11px; border-radius: 17px; font-size: 13px; line-height: 1.28; opacity: 0; transform: translateY(8px) scale(0.98); transition: opacity 0.25s, transform 0.25s; overflow-wrap: anywhere; }
+  .b.show { opacity: 1; transform: none; }
+  .b.in { align-self: flex-start; background: #e9e9eb; color: #000; }
+  .b.out { align-self: flex-end; background: #0b84fe; color: #fff; }
+  .b + .b.out, .b.out + .b.in { margin-top: 6px; }
+  .read { align-self: flex-end; font-size: 10.5px; color: #8e8e93; margin: 1px 4px 4px; opacity: 0; transition: opacity 0.25s; }
+  .read.show { opacity: 1; }
+  .typing { align-self: flex-start; background: #e9e9eb; border-radius: 18px; padding: 10px 13px; display: none; gap: 4px; margin-top: 6px; }
+  .typing.show { display: flex; }
+  .typing i { width: 7px; height: 7px; border-radius: 50%; background: #8e8e93; animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: 0.2s; }
+  .typing i:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+  .compose { display: flex; align-items: center; gap: 8px; padding: 8px 12px 26px; }
+  .compose .plus { width: 30px; height: 30px; border-radius: 50%; background: #e9e9eb; color: #8e8e93; display: grid; place-items: center; font-size: 20px; }
+  .compose .field { flex: 1; border: 1px solid #d1d1d6; border-radius: 18px; padding: 6px 12px; font-size: 14.5px; color: #c7c7cc; min-height: 32px; display: flex; align-items: center; justify-content: space-between; }
+  .compose .field.typed { color: #000; }
+  .compose .send { width: 24px; height: 24px; border-radius: 50%; background: #0b84fe; display: none; place-items: center; }
+  .compose .field.typed .send { display: grid; }
+
+  /* the app screen that takes over after the thread */
+  .status { position: relative; z-index: 2; }
+  .app { position: absolute; inset: 0; z-index: 1; background: #fff; color: #111315; opacity: 0; transform: translateX(28px); transition: opacity 0.45s, transform 0.45s; pointer-events: none; overflow: hidden; }
+  .app.show { opacity: 1; transform: none; }
+  .app-scroll { padding: 8px 18px 28px; transition: transform 7s ease-in-out; }
+  .app .kk { font: 500 8.5px/1 var(--mono); letter-spacing: 0.13em; text-transform: uppercase; color: #9a9fa5; display: block; }
+  .app .kk.go { color: #2b8a3e; display: inline; }
+  .app .kk.sec { margin-top: 20px; }
+  .app-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
+  .app-top .hi { font: 400 26px/1 var(--serif); }
+  .app-top .kk { display: inline; }
+  .rec { display: flex; align-items: center; gap: 6px; }
+  .rec i { width: 6px; height: 6px; border-radius: 50%; background: #2b8a3e; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  .clock { font: 400 64px/1 var(--serif); letter-spacing: -1px; font-variant-numeric: tabular-nums; margin: 8px 0 20px; }
+  .app-bg { position: absolute; inset: 0; pointer-events: none; }
+  .app-bg img { width: 100%; height: 100%; object-fit: cover; opacity: 0.16; display: block; }
+  .app .dot { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #2b8a3e; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,0.4); }
+  .app-view { position: absolute; inset: 38px 0 0; overflow: hidden; }
+  .app-scroll { position: relative; }
+  .app .dot { z-index: 1; }
+  .where { display: flex; align-items: baseline; gap: 10px; margin: -8px 0 20px; }
+  .where .kk { display: inline; }
+  .where code { font: 400 15px/1 var(--serif); font-variant-numeric: tabular-nums; }
+  .ledger { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #e6e7e8; margin-top: 2px; }
+  .ledger > div { padding: 12px 0; border-bottom: 1px solid #e6e7e8; min-width: 0; }
+  .ledger > div:nth-child(odd) { padding-right: 10px; border-right: 1px solid #e6e7e8; }
+  .ledger > div:nth-child(even) { padding-left: 12px; }
+  .ledger b { display: block; font: 400 26px/1 var(--serif); font-variant-numeric: tabular-nums; margin-top: 9px; white-space: nowrap; }
+  .ledger small { display: block; margin-top: 4px; font-size: 9.5px; line-height: 1.3; color: #5f656b; }
+  .app-lede { font-size: 12.5px; line-height: 1.45; color: #5f656b; margin: 20px 0; }
+  .hold { border: 1px solid #111315; background: rgba(255,255,255,0.75); text-align: center; font: 500 12.5px/1 var(--sans); padding: 13px 0; position: relative; overflow: hidden; }
+  .hold.quiet { border-color: #c9ccd0; color: #5f656b; margin-top: 8px; }
+
+  @media (max-width: 820px) {
+    .hero { grid-template-columns: 1fr; }
+    .device { order: -1; }
+  }
+  @media (max-width: 380px) { .iphone { --w: 290px; } }
+  @media (prefers-reduced-motion: reduce) { .b, .read, .app, .app-scroll { transition: none; } .typing i { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="index.html">Hi.</a>
+    <nav class="nav"><a href="how.html">How it works</a><a href="index.html#use">Data collection</a><a href="index.html#models">Foundation models</a><a class="on" href="phone.html">App</a><a href="/game/">Game</a><a href="api.html">API</a></nav>
+  </header>
+
+  <section class="hero">
+    <div>
+      <h1>Your iPhone already has the sensor data. Processed and backfilled, it has insane capabilities for robotics.</h1>
+      <div class="partners">
+          <p>Looking to partner with brands like <em>Strava</em>, <em>Whop</em>, <em>Google Maps</em> and others whose people are already out there.</p>
+        <a href="mailto:ryanrana04@gmail.com?subject=Ground%20Truth%20partnership">Talk to us →</a><a class="how" href="how.html#phone-to-joints">How it works →</a>
+      </div>
+    </div>
+
+    <div class="device">
+      <div class="iphone" role="img" aria-label="iMessage thread: a Ground Truth number asks to record your hike, you say yes, it confirms and wishes you a good hike">
+        <div class="screen">
+          <div class="notch"></div>
+          <div class="status"><span>9:41</span><span class="icons">
+            <svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+            <svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="#000" opacity="0.4"/><rect x="2" y="2" width="15" height="7" rx="1.6"/><rect x="21.5" y="3.5" width="1.5" height="4" rx="0.7" opacity="0.4"/></svg>
+          </span></div>
+          <div class="thread-head"><div class="avatar"><img src="media/photon.svg" alt=""></div><div class="name">+1 (555) 014-2286</div></div>
+          <div class="msgs" id="msgs">
+            <div class="stamp"><b>iMessage</b><br>Today 9:41 AM</div>
+            <div class="b in">Saw you're going on a hike 🌲 Would you mind opting in to collecting walking data?</div>
+            <!-- Not wired yet: point this at the Strava OAuth route once the agent serves one. -->
+            <a class="b in link" href="#connect-strava"><span class="card"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15.4 17.9 13.3 13.7h-3.1L15.4 24l5.2-10.3h-3.1M10.2 0 3.3 13.7h4.1L10.2 8.1l2.8 5.6h4.1"/></svg></span><span class="meta"><b>Connect with Strava</b><small>strava.com</small></span></a>
+            <a class="b in link us" href="https://notpublishedonappstore.com" target="_blank" rel="noopener"><span class="card"><img src="media/photon.svg" alt=""></span><span class="meta"><b>Connect with us</b><small>notpublishedonappstore.com</small></span></a>
+            <div class="b out">Yes</div>
+            <div class="read">Read 9:42 AM</div>
+            <div class="typing" id="typing-2"><i></i><i></i><i></i></div>
+            <div class="b in">Thanks! We'll text you "done" when you leave. Text "off" if we don't!</div>
+            <div class="b in">Enjoy your hike 🥾</div>
+          </div>
+          <div class="compose"><div class="plus">+</div><div class="field" id="field"><span id="draft">iMessage</span><span class="send"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 10V2M2.5 5.5 6 2l3.5 3.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></span></div></div>
+          <!-- The Ground Truth recording screen, after ios/GroundTruth/Sources/Views.swift (RecordingView) on the photon branch -->
+          <div class="app" id="app" aria-hidden="true">
+            <div class="app-bg"><img src="media/app-map.jpg" alt=""></div>
+            <div class="app-view"><div class="app-scroll" id="app-scroll">
+              <div class="app-top"><span class="hi">Hi.</span><span class="kk">Ground Truth</span></div>
+              <div class="rec"><i></i><span class="kk go">Recording</span></div>
+              <div class="clock" id="clock">0:00</div>
+              <div class="where"><span class="kk">Location</span><code id="where">42.29805, -83.76330</code></div>
+              <span class="kk">Sensors</span>
+              <div class="ledger">
+                <div><span class="kk">Accelerometer</span><b data-k="acc">1.84</b><small>m/s², last second</small></div>
+                <div><span class="kk">Gyroscope</span><b data-k="gyro">38</b><small>°/s turning, last second</small></div>
+                <div><span class="kk">Barometer</span><b data-k="baro">1003.2</b><small data-k="alt">hPa, +0.0 m since start</small></div>
+                <div><span class="kk">GPS</span><b data-k="gps">± 4</b><small>metres accuracy</small></div>
+              </div>
+              <span class="kk sec">Trail</span>
+              <div class="ledger">
+                <div><span class="kk">Distance</span><b data-k="dist">0.00</b><small>km, GPS</small></div>
+                <div><span class="kk">Pace</span><b data-k="pace">14:20</b><small>min per km</small></div>
+                <div><span class="kk">Climb</span><b data-k="climb">0</b><small>metres gained, barometer</small></div>
+                <div><span class="kk">Slope</span><b data-k="slope">+12%</b><small>last 30 m</small></div>
+                <div><span class="kk">Heading</span><b>NE</b><small>48°, GPS</small></div>
+                <div></div>
+              </div>
+              <span class="kk sec">Body</span>
+              <div class="ledger">
+                <div><span class="kk">Steps</span><b data-k="steps">0</b><small>step counter</small></div>
+                <div><span class="kk">Cadence</span><b data-k="cad">104</b><small>steps per minute</small></div>
+                <div><span class="kk">Motion readings</span><b data-k="imu">0</b><small>accel + gyro, 100 per second</small></div>
+                <div><span class="kk">Gaps</span><b>0</b><small>none so far</small></div>
+              </div>
+              <p class="app-lede">Lock your phone and put it away. Recording keeps going. Don't swipe the app closed, that stops it.</p>
+              <div class="hold">Hold to end and send</div>
+              <div class="hold quiet">Hold to discard</div>
+            </div></div>
+            <i class="dot"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Ground Truth records only during an activity you said yes to. Reply STOP anytime; "delete my data" removes everything.</p>
+    <span class="mono">Hazard Intelligence</span>
+  </footer>
+</div>
+<script>
+  const msgs = document.getElementById("msgs");
+  const bubbles = [...msgs.querySelectorAll(".b")];
+  const read = msgs.querySelector(".read");
+  const typing2 = document.getElementById("typing-2");
+  const field = document.getElementById("field");
+  const draft = document.getElementById("draft");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let timers = [];
+  const at = (ms, fn) => timers.push(setTimeout(fn, ms));
+
+  function reset() {
+    timers.forEach(clearTimeout); timers = [];
+    bubbles.forEach(b => b.classList.remove("show"));
+    read.classList.remove("show"); typing2.classList.remove("show");
+    field.classList.remove("typed"); draft.textContent = "iMessage";
+  }
+
+  // After the thread, the phone switches to the Ground Truth app recording the hike, with live readings.
+  const app = document.getElementById("app");
+  const appScroll = document.getElementById("app-scroll");
+  const clockEl = document.getElementById("clock");
+  const val = k => app.querySelector(`[data-k="${k}"]`);
+  let tick = null;
+
+  function stopApp() { clearInterval(tick); app.classList.remove("show"); appScroll.style.transition = "none"; appScroll.style.transform = ""; }
+
+  function runApp() {
+    app.classList.add("show");
+    let sec = 754;   // join a hike already 12 minutes in
+    const wobble = (base, spread, dp) => (base + (Math.random() - 0.5) * spread).toFixed(dp);
+    const draw = () => {
+      clockEl.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+      const km = sec * 1.16 / 1000, climb = sec * 0.058;
+      val("acc").textContent = wobble(1.84, 0.5, 2);
+      val("gyro").textContent = wobble(38, 14, 0);
+      val("baro").textContent = (1008.3 - climb * 0.12).toFixed(1);
+      val("alt").textContent = `hPa, +${climb.toFixed(1)} m since start`;
+      val("gps").textContent = `± ${wobble(4, 2, 0)}`;
+      document.getElementById("where").textContent = `${(42.29805 + (sec - 754) * 0.000004).toFixed(5)}, ${(-83.7633 + (sec - 754) * 0.000006).toFixed(5)}`;
+      val("dist").textContent = km.toFixed(2);
+      val("pace").textContent = `14:${String(Math.round(15 + Math.random() * 10)).padStart(2, "0")}`;
+      val("climb").textContent = climb.toFixed(0);
+      val("slope").textContent = `+${wobble(12, 4, 0)}%`;
+      val("steps").textContent = Math.round(sec * 1.74).toLocaleString();
+      val("cad").textContent = wobble(104, 6, 0);
+      val("imu").textContent = (sec * 100).toLocaleString();
+      sec++;
+    };
+    draw();
+    tick = setInterval(draw, 1000);
+    if (reduced) return;
+    appScroll.style.transition = "none"; appScroll.style.transform = "";
+    const travel = () => Math.max(0, appScroll.scrollHeight - appScroll.parentElement.clientHeight);
+    at(2500, () => { appScroll.style.transition = ""; appScroll.style.transform = `translateY(-${travel()}px)`; });
+    at(11500, () => { appScroll.style.transform = ""; });
+    at(19500, play);   // back to the text thread and around again
+  }
+
+  function play() {
+    reset();
+    stopApp();
+    if (reduced) { bubbles.forEach(b => b.classList.add("show")); read.classList.add("show"); at(4000, runApp); return; }
+    at(500, () => bubbles[0].classList.add("show"));
+    at(1300, () => bubbles[1].classList.add("show"));
+    at(1900, () => bubbles[2].classList.add("show"));
+    at(3400, () => { field.classList.add("typed"); draft.textContent = "Y"; });
+    at(3650, () => { draft.textContent = "Ye"; });
+    at(3900, () => { draft.textContent = "Yes"; });
+    at(4500, () => { field.classList.remove("typed"); draft.textContent = "iMessage"; bubbles[3].classList.add("show"); });
+    at(5100, () => read.classList.add("show"));
+    at(5400, () => typing2.classList.add("show"));
+    at(6800, () => { typing2.classList.remove("show"); bubbles[4].classList.add("show"); });
+    at(8000, () => bubbles[5].classList.add("show"));
+    at(11000, runApp);
+  }
+
+  play();
+</script>
+</body>
+</html>

@@ -10,6 +10,12 @@ for f in model_encoder.onnx model_decoder.onnx; do
   echo "fetching $f"
   curl -fL --retry 3 -o "assets/sonic/$f" "$base/$f"
 done
+# Kinematic planner for hiking (hikesim): walk/run/careful commands to whole-body motion SONIC tracks. 774 MB.
+if [[ "${WITH_PLANNER:-1}" == "1" ]]; then
+  mkdir -p assets/sonic_planner
+  echo "fetching planner_sonic.onnx"
+  curl -fL --retry 3 -o assets/sonic_planner/planner_sonic.onnx "$base/planner_sonic.onnx"
+fi
 for f in config.json observation_config.yaml LICENSE README.md; do
   curl -fsL --retry 3 -o "assets/sonic/$f" "$base/$f" || echo "optional file $f not found, skipped"
 done

@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How It Works</title>
+<meta name="description" content="How Hazard Intelligence collects motion on real ground, builds the maps, and trains the policy.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<style>
+  @font-face { font-family: "Virgil"; src: url("vendor/Virgil.woff2") format("woff2"); font-display: block; }
+  .hand { font-family: "Virgil", "Comic Sans MS", cursive; paint-order: stroke fill; stroke: #fff; stroke-width: 5px; stroke-linejoin: round; }
+  .intro { padding: clamp(36px, 8vh, 80px) 0 12px; }
+  section.part { padding: clamp(56px, 9vh, 96px) 0 0; }
+  .part-head { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: baseline; }
+  .part-head .k { color: var(--faint); }
+  .part-head p { margin-top: 12px; color: var(--muted); max-width: 58ch; }
+  .sketch { margin-top: 28px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .sketch svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .back { display: inline-block; margin: clamp(64px, 10vh, 110px) 0 48px; font: 500 14px/1 var(--sans); border-bottom: 1px solid var(--accent); padding-bottom: 4px; }
+  .reel { margin-top: 20px; display: grid; gap: 8px; }
+  .reel.two { grid-template-columns: 1fr 1fr; }
+  .reel figure { margin: 0; }
+  .reel img { width: 100%; display: block; border-radius: 6px; background: var(--panel); }
+  .reel video { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--panel); border-radius: 6px; }
+  .reel figcaption { margin-top: 10px; color: var(--muted); font-size: 14px; }
+  .reel figcaption b { display: block; margin-bottom: 4px; font: 500 11px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+  .reel.three { grid-template-columns: repeat(3, 1fr); }
+  .reel.three img { aspect-ratio: 16 / 9; object-fit: cover; }
+  .reel.three figcaption { font-size: 12.5px; }
+  .reel.one { max-width: 640px; }
+  @media (max-width: 820px) { .reel.two { grid-template-columns: 1fr; } }
+  @media (max-width: 820px) { .part-head { grid-template-columns: 1fr; gap: 8px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="index.html">Hi.</a>
+    <nav class="nav"><a class="on" href="how.html">How it works</a><a href="index.html#use">Data collection</a><a href="index.html#models">Foundation models</a><a href="phone.html">App</a><a href="/game/">Game</a><a href="api.html">API</a></nav>
+  </header>
+
+  <section class="intro">
+    <h1>How it works</h1>
+    <p class="lede">Six drawings: the robot's brain, the physics it practices in, how it learns from data, the database every piece runs through, how it all connects to a real robot, and how a hike on your phone becomes joint angles.</p>
+  </section>
+
+  <section class="part">
+    <div class="part-head">
+      <span class="k">01 · The robot</span>
+      <div>
+        <h2>A foundation model that already walks, taught the ground</h2>
+        <p>NVIDIA's SONIC is the foundation: it already moves a Unitree G1 like a person. Our policy sits on top. It reads the shape of the ground ahead in the robot's own frame and nudges SONIC to lean and edge on snow, or place its feet on a rocky trail. We assume capable vision and hand it the ground as numbers.</p>
+      </div>
+    </div>
+    <div class="sketch"><svg id="d-robot"></svg></div>
+    <div class="reel one">
+      <figure><video src="media/sonic.mp4" poster="media/sonic.jpg" autoplay muted loop playsinline aria-label="NVIDIA SONIC holding a Unitree G1 upright on skis on a 15 degree slope with no ski training"></video>
+        <figcaption><b>Where we started · SONIC, zero shot</b>NVIDIA's SONIC on skis on a 15° slope with no ski training at all. It already stands and balances, so we didn't start from scratch.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="part">
+    <div class="part-head">
+      <span class="k">02 · The physics</span>
+      <div>
+        <h2>Any place becomes physics</h2>
+        <p>Type a place. Its trails and slopes come from OpenStreetMap, its shape from elevation data, and the two are stitched into a world a robot can stand on, with snow that grips and slides like snow.</p>
+      </div>
+    </div>
+    <div class="sketch"><svg id="d-maps"></svg></div>
+    <div class="reel three">
+      <figure><img src="media/terrain-marmolada-bellunese.jpg" alt="Marmolada terrain model with the race line, gates and six GoPro descents" loading="lazy"><figcaption><b>Marmolada</b>Race line, gates and six GoPro descents.</figcaption></figure>
+      <figure><img src="media/terrain-bormio-stelvio.jpg" alt="Bormio Stelvio terrain model with the race line" loading="lazy"><figcaption><b>Bormio · Stelvio</b>World Cup downhill.</figcaption></figure>
+      <figure><img src="media/terrain-beaver-creek-resort-golden-eagle.jpg" alt="Beaver Creek Golden Eagle terrain model with the race line" loading="lazy"><figcaption><b>Beaver Creek · Golden Eagle</b>Birds of Prey downhill.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="part">
+    <div class="part-head">
+      <span class="k">03 · Training</span>
+      <div>
+        <h2>Thousands of robots, and the data decides</h2>
+        <p>Thousands of robots practice at once on rebuilt ground. Every checkpoint takes the same exam. Where they still fall is the ground we need more human motion on, so the policy is only as good as the data behind it.</p>
+      </div>
+    </div>
+    <div class="sketch"><svg id="d-train"></svg></div>
+    <div class="reel two">
+      <figure><video src="media/fleet-ski.mp4" poster="media/fleet-ski.jpg" autoplay muted loop playsinline aria-label="1,000 Unitree G1s on the Truite run at Courchevel, in simulation"></video>
+        <figcaption><b>1,000× ski · Courchevel Truite</b>A thousand untrained robots on one slope. Every fall resets that robot, like an RL episode.</figcaption></figure>
+      <figure><video src="media/fleet-hike.mp4" poster="media/fleet-hike.jpg" autoplay muted loop playsinline aria-label="1,000 Unitree G1s on a Bird Hills trail in Ann Arbor, in simulation"></video>
+        <figcaption><b>1,000× hike · Bird Hills, Ann Arbor</b>The same on 1 m lidar ground. Where they fall is where we collect next.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="part">
+    <div class="part-head">
+      <span class="k">04 · Source of truth</span>
+      <div>
+        <h2>SpacetimeDB holds everything</h2>
+        <p>There is no game server. Every skier, run, cheer and motion sample is a row in SpacetimeDB, written through reducers. The game, the live map and the iMessage agent are all just subscriptions to those tables, and the dataset is the same rows.</p>
+      </div>
+    </div>
+    <div class="sketch"><svg id="d-stdb"></svg></div>
+  </section>
+
+  <section class="part">
+    <div class="part-head">
+      <span class="k">05 · Architecture</span>
+      <div>
+        <h2>From a person on a hill to a robot on it</h2>
+        <p>Phones, webcams and videos write to SpacetimeDB. The same training job runs on AWS GPUs or Modal, and the policy API serves the result. A robot pulls a policy once and runs it locally at 50 Hz, with no network in the control loop.</p>
+      </div>
+    </div>
+    <div class="sketch"><svg id="d-arch"></svg></div>
+  </section>
+
+  <section class="part" id="phone-to-joints">
+    <div class="part-head">
+      <span class="k">06 · Phone to joints</span>
+      <div>
+        <h2>How a text becomes joint angles</h2>
+        <p>Photon texts you on iMessage. Say yes and the Ground Truth app records motion at 100 Hz, GPS every second, the barometer and your steps until you leave. The phone server checks the track against the trail under it and writes it to SpacetimeDB in one standard shape. On the same trail, rebuilt from 1 m lidar, NVIDIA's SONIC walks a G1, and every frame comes out as the same 36 numbers: where the robot is, which way it faces, and 29 joint angles.</p>
+      </div>
+    </div>
+    <div class="sketch"><svg id="d-joints"></svg></div>
+  </section>
+
+  <a class="back" href="index.html#use">Try it yourself →</a>
+
+  <footer>
+    <p>Every robot here is in simulation. SONIC and its planner are NVIDIA GEAR-SONIC (NVIDIA Open Model License); the G1 model is Unitree's (Apache 2.0).</p>
+    <span class="mono">Hazard Intelligence · MHacks 2026 · Ann Arbor</span>
+  </footer>
+</div>
+
+<script src="vendor/rough.js"></script>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const INK = "#1e1e1e", MUTED = "#6b6f74", EMPH = "#1e1e1e", KEY = "#e9ecef";
+const YELLOW = "#ffec99", BLUE = "#a5d8ff", GREEN = "#b2f2bb", PINK = "#ffc9c9", VIOLET = "#d0bfff";
+
+function sketch(id, W, H, fn) {
+  const svg = document.getElementById(id);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const rc = rough.svg(svg);
+  let s = 0;
+  for (const ch of id) s = (s * 31 + ch.charCodeAt(0)) % 2147483647;
+  const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const O = (o = {}) => Object.assign({ roughness: 2.5, bowing: 2.2, stroke: INK, strokeWidth: 1.7, seed: 1 + Math.floor(rnd() * 1e6) }, o);
+  const put = (n, parent) => ((parent || svg).appendChild(n), n);
+  const fillOpts = o => o.fill ? { fill: o.fill, fillStyle: o.fillStyle || "hachure", hachureGap: o.gap || 6, fillWeight: 1.5, hachureAngle: -41 + rnd() * 14 } : {};
+
+  const D = {
+    rnd,
+    text(x, y, str, o = {}) {
+      const t = document.createElementNS(NS, "text");
+      const rot = o.rot ?? (rnd() - 0.5) * 3.2;
+      t.setAttribute("x", x); t.setAttribute("y", y);
+      t.setAttribute("text-anchor", o.anchor || "start");
+      t.setAttribute("font-size", o.size || 19);
+      t.setAttribute("fill", o.color || INK);
+      t.setAttribute("class", "hand");
+      t.setAttribute("transform", `rotate(${rot.toFixed(2)} ${x} ${y})`);
+      String(str).split("\n").forEach((line, i) => {
+        const sp = document.createElementNS(NS, "tspan");
+        sp.setAttribute("x", x);
+        if (i) sp.setAttribute("dy", (o.lh || 1.25) + "em");
+        sp.textContent = line;
+        t.appendChild(sp);
+      });
+      return put(t, o.parent);
+    },
+    box(x, y, w, h, o = {}) {
+      put(rc.rectangle(x, y, w, h, O({ strokeWidth: o.sw || 1.7, ...fillOpts(o) })), o.parent);
+      if (o.left) {
+        if (o.label) D.text(x + o.left, y + 40, o.label, { size: o.size || 22, parent: o.parent });
+        if (o.sub) D.text(x + o.left, y + 64, o.sub, { size: o.subSize || 14, color: MUTED, lh: 1.25, parent: o.parent });
+        return;
+      }
+      const lines = o.label ? o.label.split("\n").length : 0;
+      const size = o.size || 23;
+      const top = y + h / 2 - ((lines - 1) * size * 1.2) / 2 + (o.sub ? -10 : 7) + (o.dy || 0);
+      if (o.label) D.text(x + w / 2 + (o.dx || 0), top, o.label, { size, anchor: "middle", lh: 1.2, parent: o.parent });
+      if (o.sub) D.text(x + w / 2 + (o.dx || 0), top + (lines - 1) * size * 1.2 + 26, o.sub, { size: o.subSize || 15, anchor: "middle", color: MUTED, parent: o.parent });
+    },
+    ellipse(cx, cy, w, h, o = {}) {
+      put(rc.ellipse(cx, cy, w, h, O({ strokeWidth: o.sw || 1.7, stroke: o.stroke || INK, ...fillOpts(o) })));
+      if (o.label) D.text(cx, cy + (o.sub ? -4 : 7), o.label, { size: o.size || 23, anchor: "middle" });
+      if (o.sub) D.text(cx, cy + 22, o.sub, { size: o.subSize || 15, anchor: "middle", color: MUTED });
+    },
+    line(x1, y1, x2, y2, o = {}) { put(rc.line(x1, y1, x2, y2, O({ stroke: o.color || INK, strokeWidth: o.sw || 1.6, strokeLineDash: o.dash }))); },
+    path(pts, o = {}) { put(rc.curve(pts, O({ stroke: o.color || INK, strokeWidth: o.sw || 1.7, roughness: o.rough ?? 1.6, strokeLineDash: o.dash }))); },
+    poly(pts, o = {}) { put(rc.polygon(pts, O({ stroke: o.color || INK, strokeWidth: o.sw || 1.5, ...fillOpts(o) }))); },
+    circle(cx, cy, d, o = {}) { put(rc.circle(cx, cy, d, O({ stroke: o.color || INK, strokeWidth: o.sw || 1.6, ...fillOpts(o) }))); },
+    arrow(x1, y1, x2, y2, o = {}) {
+      const bend = o.bend ?? (rnd() - 0.5) * 34;
+      const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+      const cx = (x1 + x2) / 2 - (y2 - y1) / len * bend, cy = (y1 + y2) / 2 + (x2 - x1) / len * bend;
+      const c = o.color || INK, sw = o.sw || 1.9;
+      put(rc.curve([[x1, y1], [cx, cy], [x2, y2]], O({ stroke: c, strokeWidth: sw, roughness: 1.8, strokeLineDash: o.dash })));
+      const a = Math.atan2(y2 - cy, x2 - cx), L = o.head || 17;
+      for (const sgn of [-1, 1]) {
+        const b = a + Math.PI + sgn * 0.42;
+        put(rc.line(x2, y2, x2 + L * Math.cos(b), y2 + L * Math.sin(b), O({ stroke: c, strokeWidth: sw, roughness: 1.4 })));
+      }
+      if (o.label) D.text(cx + (o.lx || 0), cy + (o.ly ?? -10), o.label, { size: o.lsize || 16, anchor: "middle", color: o.lcolor || MUTED });
+    },
+    note(x, y, w, h, str, o = {}) {
+      const g = document.createElementNS(NS, "g");
+      const rot = o.rot ?? (rnd() - 0.5) * 7;
+      g.setAttribute("transform", `rotate(${rot.toFixed(2)} ${x + w / 2} ${y + h / 2})`);
+      put(g);
+      g.appendChild(rc.rectangle(x, y, w, h, O({ fill: o.fill || YELLOW, fillStyle: "solid", roughness: 1.6, strokeWidth: 1.2 })));
+      D.text(x + 16, y + 32, str, { size: o.size || 18, parent: g, rot: 0, lh: 1.3 });
+    },
+    scribble(x, y, w, o = {}) {
+      const pts = [];
+      for (let i = 0; i <= 8; i++) pts.push([x + (w * i) / 8, y + (i % 2 ? -3 : 3) + (rnd() - 0.5) * 3]);
+      D.path(pts, { color: o.color || EMPH, sw: o.sw || 2.4, rough: 1.2 });
+    },
+    stick(x, y, sc = 1, o = {}) {  // feet at (x, y)
+      const c = o.color || INK, k = sc;
+      D.circle(x, y - 62 * k, 15 * k, { color: c, sw: 1.5 });
+      D.line(x, y - 54 * k, x, y - 26 * k, { color: c });
+      D.line(x, y - 46 * k, x - 14 * k, y - 34 * k, { color: c });
+      D.line(x, y - 46 * k, x + 14 * k, y - 36 * k, { color: c });
+      D.line(x, y - 26 * k, x - 9 * k, y, { color: c });
+      D.line(x, y - 26 * k, x + 9 * k, y, { color: c });
+      if (o.skis) D.line(x - 26 * k, y + 2, x + 30 * k, y + 2 + o.skis * 30 * k, { color: EMPH, sw: 2.6 });
+    },
+    phone(x, y) { D.box(x, y, 30, 52, { sw: 1.5 }); D.line(x + 10, y + 44, x + 20, y + 44, { sw: 1.4 }); },
+    cam(x, y) { D.box(x, y, 46, 34, { sw: 1.5 }); D.circle(x + 23, y + 17, 18, { sw: 1.4 }); },
+    badge(x, y, name, o = {}) {  // a sponsor tag
+      const w = o.w || name.length * 11 + 34;
+      put(rc.rectangle(x, y, w, 34, O({ fill: o.fill || "#fff", fillStyle: "solid", roughness: 1.2, strokeWidth: 1.6, stroke: o.color || INK })));
+      D.circle(x + 15, y + 17, 10, { color: o.color || INK, fill: o.color || INK, fillStyle: "solid", sw: 1 });
+      D.text(x + 28, y + 23, name, { size: 16, rot: 0, color: o.color || INK });
+      return w;
+    },
+    play(x, y) { D.box(x, y, 50, 36, { sw: 1.5 }); D.poly([[x + 19, y + 9], [x + 19, y + 27], [x + 34, y + 18]], { fill: INK, fillStyle: "solid" }); },
+  };
+  fn(D);
+}
+
+/* 01 · The robot */
+sketch("d-robot", 1100, 670, D => {
+  // the ground ahead, in the robot's own frame
+  D.text(36, 52, "what it reads", { size: 26, rot: -1.5 });
+  D.scribble(36, 64, 150);
+  const ox = 110, oy = 250, k = 24;
+  [-1.0, 0.0, 1.0, 2.0, 3.5, 5.0, 7.5, 10.0].forEach(hx => [-1.5, 0, 1.5].forEach(hy =>
+    D.circle(ox + hx * k, oy - hy * k, 10, { fill: BLUE, fillStyle: "solid", sw: 1.2 })));
+  D.circle(ox, oy, 20, { fill: INK, fillStyle: "solid" });
+  D.arrow(ox, oy + 70, ox + 260, oy + 70, { bend: 3, color: MUTED, sw: 1.4 });
+  D.text(ox + 90, oy + 96, "forward", { size: 15, color: MUTED });
+  D.text(36, 110, "the ground ahead, 1 m behind\nto 10 m ahead, in its own frame", { size: 16, color: EMPH });
+  ["its body: joints, tilt, speed", "feet / ski edges: pressure", "where to go: heading + speed"]
+    .forEach((t, i) => D.text(40, 380 + i * 30, "· " + t, { size: 16.5 }));
+  D.text(40, 478, "vision assumed: the ground\narrives as numbers, not pixels", { size: 14, color: MUTED });
+
+  D.arrow(362, 250, 394, 250, { bend: 2, sw: 2.2 });
+  D.ellipse(500, 250, 210, 136, { label: "our policy", sub: "one per terrain · PPO", fill: KEY, fillStyle: "solid", sw: 2.2 });
+  D.arrow(500, 322, 500, 372, { bend: 6, sw: 2.2 });
+  D.text(486, 352, "lean + 29 joint nudges", { size: 15, color: MUTED, anchor: "end" });
+  D.box(380, 378, 240, 120, { label: "SONIC", sub: "NVIDIA's whole-body\nfoundation model · frozen", fill: VIOLET, gap: 8, size: 30 });
+  D.arrow(500, 502, 500, 556, { bend: -6, sw: 2.2 });
+  D.text(486, 536, "29 motors, 50× a second", { size: 15, color: MUTED, anchor: "end" });
+  D.text(430, 600, "Unitree G1", { size: 22 });
+
+  // ski and hike: same body, two policies
+  D.box(690, 40, 380, 250, { sw: 1.6 });
+  D.text(710, 80, "ski", { size: 24 });
+  D.path([[710, 150], [850, 200], [1050, 270]], { sw: 2.4, rough: 2 });
+  D.stick(850, 196, 0.9, { skis: 0.35 });
+  D.text(900, 130, "lean, edge, carve\nthrough the gates", { size: 15, color: MUTED });
+  D.box(690, 320, 380, 250, { sw: 1.6 });
+  D.text(710, 360, "hike", { size: 24 });
+  D.path([[710, 520], [760, 505], [790, 520], [840, 490], [880, 500], [940, 460], [990, 470], [1050, 430]], { sw: 2.4, rough: 1.4 });
+  [[790, 516], [905, 486], [1000, 466]].forEach(([x, y]) => D.circle(x, y - 6, 14, { fill: MUTED, fillStyle: "solid", sw: 1 }));
+  D.stick(870, 496, 0.9);
+  D.text(900, 400, "feet on roots and rocks,\nclimbs up to ~13°", { size: 15, color: MUTED });
+  D.arrow(608, 240, 686, 165, { bend: -10, color: MUTED, sw: 1.5 });
+  D.arrow(624, 438, 686, 445, { bend: 4, color: MUTED, sw: 1.5 });
+  D.note(700, 592, 380, 52, "SONIC already walks. we teach it the ground.", { rot: -1, size: 17 });
+});
+
+/* 02 · The maps */
+sketch("d-maps", 1100, 760, D => {
+  D.box(30, 50, 210, 90, { label: "\"Bormio, stelvio\"", sub: "type any place", fill: YELLOW, fillStyle: "solid", size: 20 });
+  D.arrow(244, 95, 296, 95, { bend: 4 });
+  D.box(300, 55, 150, 80, { label: "find it", sub: "geocode", size: 22 });
+  D.box(530, 10, 230, 80, { label: "trail + piste lines", sub: "OpenStreetMap", size: 20, fill: GREEN, gap: 9 });
+  D.box(530, 120, 230, 80, { label: "the ground's shape", sub: "AWS terrain tiles · 1 m USGS lidar", size: 20, fill: GREEN, gap: 9 });
+  D.arrow(454, 82, 526, 52, { bend: -8 });
+  D.arrow(454, 108, 526, 158, { bend: 8 });
+  D.box(840, 50, 230, 110, { label: "stitch a course", sub: "1.2 km of piste, or a\nwhole park's trail", size: 22 });
+  D.arrow(764, 52, 836, 90, { bend: 6 });
+  D.arrow(764, 158, 836, 124, { bend: -6 });
+
+  // the world sketch
+  D.text(40, 262, "MuJoCo world", { size: 30, rot: -2 });
+  D.scribble(40, 274, 200);
+  const prof = [[40, 330], [140, 352], [230, 400], [330, 430], [420, 482], [520, 512], [610, 560], [690, 590]];
+  D.path(prof, { sw: 2.6, rough: 2.2 });
+  D.path(prof.map(([x, y]) => [x + 6, y + 30]), { sw: 1.2, color: MUTED, rough: 2.4 });
+  // gates
+  [[180, 372, "#e03131"], [300, 420, "#1971c2"], [460, 492, "#e03131"], [580, 545, "#1971c2"]].forEach(([x, y, c]) => {
+    D.line(x, y, x, y - 46, { color: INK, sw: 1.6 });
+    D.poly([[x, y - 46], [x + 20, y - 38], [x, y - 30]], { fill: c, fillStyle: "solid", color: c });
+  });
+  // trees
+  [[110, 342], [395, 470], [640, 570]].forEach(([x, y]) => {
+    D.poly([[x, y - 70], [x - 18, y - 16], [x + 18, y - 16]], { fill: GREEN, gap: 5 });
+    D.line(x, y - 16, x, y, { sw: 2 });
+  });
+  D.stick(250, 405, 0.8, { skis: 0.35 });
+  D.arrow(140, 520, 236, 412, { bend: 20, color: EMPH });
+  D.text(30, 548, "snow that acts like snow:\nglide, edge grip, carving", { size: 17, color: EMPH });
+  D.arrow(520, 400, 468, 450, { bend: -10, color: MUTED });
+  D.text(500, 390, "gates", { size: 17, color: MUTED });
+  D.arrow(600, 462, 632, 500, { bend: 8, color: MUTED });
+  D.text(520, 450, "trees: hit one = fall", { size: 17, color: MUTED });
+  D.arrow(955, 168, 600, 330, { bend: -40, dash: [8, 8] });
+
+  // practice tiles
+  const gx = 820, gy = 300;
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+    const x = gx + c * 82, y = gy + r * 64;
+    D.box(x, y, 72, 54, { sw: 1.3, fill: r === 1 && c === 2 ? KEY : undefined, fillStyle: "solid" });
+    const pts = []; for (let i = 0; i <= 5; i++) pts.push([x + 8 + i * 11, y + 30 + (D.rnd() - 0.5) * 24]);
+    D.path(pts, { sw: 1.2, rough: 1 });
+  }
+  D.text(816, 520, "remix it: bumps, moguls,\njumps, chutes, side tilt", { size: 17 });
+  D.text(816, 572, "128 practice tiles · 4.5° to 42°", { size: 15, color: MUTED });
+  D.note(410, 600, 300, 52, "25 ski runs + 6 Ann Arbor trails", { rot: -1.5, size: 17 });
+
+  // how the ground feels
+  D.box(30, 640, 330, 96, { label: "6 snow types", sub: "groomed · ice · hardpack\nsoft · slush · powder", size: 21, fill: BLUE, gap: 9 });
+  D.arrow(110, 590, 130, 636, { bend: 6, color: MUTED });
+  D.box(740, 640, 330, 96, { label: "trail ground (next)", sub: "dry · wet rock · mud, each its own grip\nset from recent rain and frost, weather API", size: 21 });
+  D.arrow(900, 590, 900, 636, { bend: -6, dash: [8, 7], color: MUTED });
+});
+
+/* 04 · Training */
+sketch("d-train", 1100, 700, D => {
+  D.box(30, 50, 300, 230, { sw: 1.8 });
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) D.stick(62 + c * 46, 98 + r * 52, 0.42, { skis: 0.2 });
+  D.text(40, 314, "4,096 robots at once", { size: 22 });
+  D.text(40, 344, "one H100 · MuJoCo Warp", { size: 16, color: MUTED });
+  D.note(40, 370, 280, 56, "~63k robot steps a second", { rot: 2, size: 17 });
+
+  D.arrow(334, 150, 396, 150, { bend: 6, sw: 2.2 });
+  D.box(400, 40, 290, 230, { fill: GREEN, gap: 10, sw: 1.8 });
+  D.text(420, 84, "score every move", { size: 24, rot: -1.5 });
+  ["+ stay up", "+ reach the gates", "+ skis parallel, both down", "+ hold speed + heading", "fall = start over"]
+    .forEach((s, i) => D.text(426, 126 + i * 30, s, { size: 17, color: i === 4 ? "#c92a2a" : INK }));
+
+  D.arrow(694, 150, 736, 150, { bend: -4, sw: 2.2 });
+  D.ellipse(840, 150, 190, 100, { label: "PPO update", fill: KEY, fillStyle: "solid", sw: 2.2, size: 22 });
+  D.arrow(840, 204, 840, 262, { bend: 8 });
+  D.box(750, 266, 180, 64, { label: "new checkpoint", size: 19 });
+  D.arrow(840, 334, 840, 392, { bend: -8 });
+
+  // the exam chart: clean runs out of 24, every scored checkpoint in order
+  const X0 = 600, Y0 = 640, CW = 460, CH = 210;
+  D.line(X0, Y0, X0 + CW, Y0, { sw: 1.8 });
+  D.line(X0, Y0, X0, Y0 - CH, { sw: 1.8 });
+  D.text(X0 - 10, Y0 - CH - 44, "the exam", { size: 24 });
+  D.text(X0 - 10, Y0 - CH - 20, "24 slopes, 12 s each", { size: 15, color: MUTED });
+  D.text(X0 - 12, Y0 - CH + 6, "24", { size: 14, anchor: "end", color: MUTED });
+  D.text(X0 - 12, Y0 + 4, "0", { size: 14, anchor: "end", color: MUTED });
+  D.text(X0 + CW, Y0 + 26, "checkpoints →", { size: 14, anchor: "end", color: MUTED });
+  const clean = [1, 18, 17, 4, 14, 19, 1, 12, 2, 12, 13, 5, 7, 8, 15, 15, 17, 18];
+  const pts = clean.map((v, i) => [X0 + 20 + i * (CW - 40) / (clean.length - 1), Y0 - v / 24 * CH]);
+  D.path(pts, { color: EMPH, sw: 2.4, rough: 1.2 });
+  pts.forEach(([x, y]) => D.circle(x, y, 7, { color: EMPH, fill: EMPH, fillStyle: "solid", sw: 1 }));
+  D.circle(pts[5][0], pts[5][1], 40, { color: INK, sw: 1.6 });
+  D.text(pts[5][0] - 4, pts[5][1] - 30, "19/24!", { size: 20, anchor: "middle" });
+  D.text(pts[0][0] - 10, Y0 + 26, "1/24: SONIC alone", { size: 14, color: MUTED });
+  D.text(pts[10][0] - 6, Y0 - 12, "v7 wobbled: action noise drifted up", { size: 13, color: "#c92a2a" });
+
+  D.arrow(590, 560, 336, 290, { bend: -60, label: "harder slopes next", lx: -40, ly: 30, lsize: 17 });
+  D.text(40, 520, "where it falls =\nwhat to record next", { size: 22, color: EMPH, rot: -2 });
+  D.text(40, 590, "→ back to the data", { size: 18, color: EMPH, rot: -1 });
+  D.arrow(590, 640, 330, 600, { bend: -20, color: EMPH, sw: 2.6 });
+});
+/* 04 · Source of truth */
+sketch("d-stdb", 1100, 700, D => {
+  // writers
+  D.box(30, 60, 250, 96, { label: "the webcam game", sub: "your skier, 8× a second", left: 70, fill: BLUE, gap: 9 });
+  D.cam(44, 88);
+  D.box(30, 210, 250, 96, { label: "your iPhone", sub: "motion + GPS, opt in", left: 62, fill: BLUE, gap: 9 });
+  D.phone(48, 230);
+  D.box(30, 360, 250, 96, { label: "any video", sub: "3D pose per frame", left: 72, fill: BLUE, gap: 9 });
+  D.play(42, 388);
+  [108, 258, 408].forEach((y, i) => D.arrow(284, y, 392, 250 + (i - 1) * 40, { bend: (i - 1) * -10, sw: 2,
+    label: ["reducers", "", ""][i], lx: -6, ly: -14 }));
+
+  // the database
+  const cx = 540, top = 120, h = 300, w = 280;
+  D.ellipse(cx, top, w, 56, { fill: YELLOW, fillStyle: "solid", sw: 2.2 });
+  D.line(cx - w / 2, top, cx - w / 2, top + h, { sw: 2.2 });
+  D.line(cx + w / 2, top, cx + w / 2, top + h, { sw: 2.2 });
+  D.path([[cx - w / 2, top + h], [cx - 60, top + h + 28], [cx + 60, top + h + 28], [cx + w / 2, top + h]], { sw: 2.2 });
+  D.text(cx, top + 70, "SpacetimeDB", { size: 30, anchor: "middle" });
+  D.text(cx, top + 96, "the source of truth", { size: 15, anchor: "middle", color: MUTED });
+  ["skier · live state", "run · splits per gate", "trace_chunk · the dataset", "cheer · feed · outbox"]
+    .forEach((t, i) => D.text(cx - 110, top + 146 + i * 34, t, { size: 17 }));
+  D.text(cx, top + h + 70, "logic runs inside the database:\nreducers write, a timer sweeps dead tabs", { size: 15, anchor: "middle", color: MUTED });
+
+  // readers
+  D.box(820, 40, 250, 86, { label: "ghosts + leaderboard", sub: "everyone on one mountain", size: 19 });
+  D.box(820, 160, 250, 86, { label: "the live map", sub: "board at the table", size: 19 });
+  D.box(820, 280, 250, 86, { label: "iMessage agent", sub: "join codes, results, photos", size: 19, fill: GREEN, gap: 9 });
+  D.box(820, 400, 250, 86, { label: "training data", sub: "motion + ground under it", size: 19, fill: KEY, fillStyle: "solid" });
+  [83, 203, 323].forEach((y, i) => D.arrow(684, 200 + i * 50, 816, y, { bend: (i - 1) * 10, sw: 2 }));
+  D.arrow(684, 360, 816, 443, { bend: 10, sw: 2, dash: [8, 7] });
+  D.text(700, 586, "subscriptions, not requests:\nno game server in between", { size: 17, color: EMPH, rot: -2 });
+  D.text(830, 512, "dashed: export is next", { size: 13, color: MUTED });
+
+  D.note(40, 520, 300, 90, "so far: 232 minutes\n79 skiing · 153 hiking", { rot: 2, size: 18 });
+  let x;
+  D.text(300, 668, "built with", { size: 16, color: MUTED, rot: 0 });
+  x = 390;
+  x += D.badge(x, 644, "SpacetimeDB", { color: "#7048e8" }) + 14;
+  x += D.badge(x, 644, "Photon · iMessage", { color: "#1971c2" }) + 14;
+  D.badge(x, 644, "AWS · terrain + GPUs", { color: "#e8590c" });
+});
+/* 05 · Architecture */
+sketch("d-arch", 1100, 600, D => {
+  D.text(36, 48, "in the field", { size: 22, color: MUTED });
+  D.box(30, 70, 220, 90, { label: "people", sub: "phone · webcam · video", size: 22, fill: BLUE, gap: 9 });
+  D.arrow(254, 115, 336, 115, { bend: 4, sw: 2.2 });
+  D.box(340, 60, 260, 110, { label: "SpacetimeDB", sub: "every row, live", size: 24, fill: YELLOW, fillStyle: "solid", sw: 2.2 });
+  D.arrow(604, 115, 686, 115, { bend: -4, sw: 2.2, dash: [8, 7], label: "export (next)", ly: 30 });
+
+  D.text(690, 48, "in the cloud", { size: 22, color: MUTED });
+  D.box(690, 60, 380, 230, { sw: 1.8 });
+  D.text(710, 98, "GPU training", { size: 24 });
+  D.text(710, 128, "4,096 robots per GPU · MuJoCo Warp", { size: 15, color: MUTED });
+  D.text(710, 168, "· AWS: EC2 GPU, Deep Learning AMI, S3", { size: 16 });
+  D.text(710, 196, "· Modal: H100", { size: 16 });
+  D.text(710, 236, "same training code on either", { size: 15, color: EMPH });
+
+  D.box(340, 250, 260, 110, { label: "physics worlds", sub: "OSM + AWS terrain tiles\n+ USGS 1 m lidar", size: 22, fill: GREEN, gap: 9 });
+  D.arrow(604, 290, 686, 220, { bend: -8, sw: 2 });
+  D.arrow(880, 294, 880, 376, { bend: 6, sw: 2.2, label: "checkpoint → ONNX", lx: 70, ly: 10 });
+  D.box(690, 380, 380, 110, { label: "policy API", sub: "list · pull ONNX · infer · websocket\nApp Runner container or Modal", size: 22, fill: KEY, fillStyle: "solid" });
+  D.arrow(686, 440, 454, 470, { bend: 10, sw: 2.2, label: "pull once", ly: -14 });
+
+  D.text(36, 418, "on the robot", { size: 22, color: MUTED });
+  D.box(30, 430, 420, 130, { sw: 1.8 });
+  D.stick(80, 540, 0.9);
+  D.text(130, 470, "the policy runs locally", { size: 21 });
+  D.text(130, 500, "141 in → 31 out, every 20 ms", { size: 16 });
+  D.text(130, 528, "no network in the control loop", { size: 15, color: MUTED });
+  D.text(480, 580, "where it falls → what people record next → back to the top", { size: 16, color: EMPH, rot: -1 });
+});
+/* 06 · Phone to joints */
+sketch("d-joints", 1100, 700, D => {
+  // 1. ask, record, register
+  D.box(30, 60, 230, 110, { label: "Photon", sub: "iMessage: \"saw you're going\non a hike, opt in?\"  yes", size: 24, fill: GREEN, gap: 9 });
+  D.arrow(264, 115, 336, 115, { bend: 4, sw: 2.2, label: "link", ly: -14 });
+  D.box(340, 50, 330, 130, { sw: 1.8 });
+  D.phone(360, 70);
+  D.text(408, 92, "Ground Truth app", { size: 22 });
+  D.text(408, 120, "accel + gyro · 100 Hz", { size: 15 });
+  D.text(408, 142, "GPS · 1 Hz  ·  barometer  ·  steps", { size: 15 });
+  D.text(408, 164, "until you leave the trail", { size: 14, color: MUTED });
+  D.arrow(674, 115, 746, 115, { bend: -4, sw: 2.2, label: "upload", ly: -14 });
+  D.box(750, 50, 320, 130, { label: "phone server", sub: "drop GPS worse than 30 m\nmatch the OSM trail · climb · gaps\ntrim 200 m off each end", size: 22 });
+
+  // 2. one standard shape in SpacetimeDB
+  D.arrow(910, 184, 760, 266, { bend: -14, sw: 2.2, label: "reducers", lx: 40 });
+  const cx = 550, top = 270, w = 560, h = 150;
+  D.ellipse(cx, top, w, 46, { fill: YELLOW, fillStyle: "solid", sw: 2.2 });
+  D.line(cx - w / 2, top, cx - w / 2, top + h, { sw: 2.2 });
+  D.line(cx + w / 2, top, cx + w / 2, top + h, { sw: 2.2 });
+  D.path([[cx - w / 2, top + h], [cx - 120, top + h + 24], [cx + 120, top + h + 24], [cx + w / 2, top + h]], { sw: 2.2 });
+  D.text(cx, top + 8, "SpacetimeDB", { size: 26, anchor: "middle" });
+  D.text(cx - 250, top + 60, "hike_chunk · one row a second", { size: 18 });
+  D.text(cx - 250, top + 84, "lat lon alt · speed · slope · cadence · bounce · impact", { size: 14, color: MUTED });
+  D.text(cx - 250, top + 118, "capture · one shape for every stream", { size: 18 });
+  D.text(cx - 250, top + 142, "channels named once · flat f32 frames · a rate in Hz", { size: 14, color: MUTED });
+  D.note(880, 452, 200, 74, "phone, game and video\nall land the same way", { rot: 3, size: 16 });
+
+  // 3. the same trail in simulation, out come joints
+  D.box(30, 500, 260, 110, { label: "the trail", sub: "OSM route + USGS 1 m lidar\nas a MuJoCo course", size: 22, fill: GREEN, gap: 9 });
+  D.arrow(294, 555, 366, 555, { bend: 4, sw: 2.2 });
+  D.box(370, 490, 260, 130, { sw: 1.8 });
+  D.stick(410, 600, 0.9);
+  D.text(450, 528, "SONIC walks a G1", { size: 20 });
+  D.text(450, 554, "planner picks steps,", { size: 15 });
+  D.text(450, 576, "controller tracks them", { size: 15 });
+  D.text(450, 598, "careful on steep grades", { size: 14, color: MUTED });
+  D.arrow(634, 555, 706, 555, { bend: -4, sw: 2.2 });
+  D.box(710, 540, 360, 130, { label: "joint frames", sub: "36 numbers a frame, 25 Hz\nroot xyz · facing quaternion\n29 joints, MuJoCo order", size: 22, fill: KEY, fillStyle: "solid" });
+
+  // what is wired today and what is next
+  D.arrow(380, 436, 170, 496, { bend: 10, sw: 2, dash: [8, 7], label: "matched trail → course", lx: -40, ly: -6 });
+  D.arrow(720, 436, 520, 486, { bend: -10, sw: 2, dash: [8, 7], label: "your pace + slope → gait, speed", lx: 60, ly: -4 });
+  D.text(30, 680, "dashed: next. Today a course is built per park, and the walk speed is set by hand.", { size: 14, color: MUTED, rot: 0 });
+});
+</script>
+</body>
+</html>

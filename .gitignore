@@ -17,12 +17,22 @@ runs_*.log
 
 # Third-party weights, fetched by scripts/fetch_assets.sh
 assets/sonic/
+assets/sonic
+assets/sonic_planner/
 assets/pose/
 assets/menagerie_unitree_g1/
+assets/menagerie_unitree_g1
 *.pt
 *.onnx
 *.task
 *.mp4
+
+# Ground Truth: node deps, generated Xcode project, local signing team
+ground/agent/node_modules/
+ios/GroundTruth/GroundTruth.xcodeproj/
+ios/GroundTruth/Local.xcconfig
+ios/GroundTruth/build/
+ground/agent/.env
 
 # MHacks game and SpacetimeDB module
 game/node_modules/

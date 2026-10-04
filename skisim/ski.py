@@ -22,7 +22,7 @@ class SkiParams:
   length: float = 1.2  # m, robot-scale GS ski (a 1.85 m racer on ~1.9 m skis, scaled to the 1.32 m G1)
   width: float = 0.07
   thickness: float = 0.015
-  sidecut_radius: float = 17.0  # m, FIS GS skis are 30 m at full size
+  sidecut_radius: float = 13.0  # m, slalom-like at robot scale (17 m GS skis could not make 19 m gates at speed)
   mu_glide: float = 0.04  # along the ski, waxed ski on groomed snow
   mu_skid: float = 0.25  # sideways when the ski is flat and skidding
   mu_carve: float = 1.5  # sideways grip limit once the edge is fully engaged

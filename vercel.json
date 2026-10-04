@@ -1,0 +1,11 @@
+{
+  "buildCommand": "bash web/build.sh",
+  "outputDirectory": "web/dist",
+  "installCommand": "echo 'dependencies install inside web/build.sh'",
+  "framework": null,
+  "rewrites": [
+    { "source": "/courses/:path*", "destination": "/game/courses/:path*" },
+    { "source": "/g1/:path*", "destination": "/game/g1/:path*" },
+    { "source": "/favicon.svg", "destination": "/game/favicon.svg" }
+  ]
+}
