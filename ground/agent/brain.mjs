@@ -123,6 +123,7 @@ export function createBrain({ store, server, llm, mountain = null, log = console
       p.notes = []
       p.pendingLabel = null
       p.history = []
+      store.forget(handle)
       store.save()
       const n = r.deleted.hikes
       return [`done. deleted ${n} hike${n === 1 ? '' : 's'} and everything tied to your number on our side.`]

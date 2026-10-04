@@ -17,21 +17,32 @@ every policy can be downloaded as ONNX to run inside your own physics loop at fu
   POST /v1/missions/{mid}/step       {obs, pose: {x, y, yaw}} -> actions with the server's own route command
   GET  /v1/missions/{mid}            progress, distance to target, arrival time; ?log=1 adds every step
   WS   /                             same, default policy (or ?policy=<id>), so openpi_client can point at the host
+
+Keys and usage live in the team's SpacetimeDB (DATABASE.md). A key goes in `Authorization: Bearer hi_...`,
+`Authorization: Api-Key hi_...` (openpi_client's api_key) or `X-Api-Key`. Without one, the public policies still work
+and the call counts for the public tenant; a wrong or revoked key gets 401. Every call is logged to api_call in
+batches. STDB_TOKEN (the API's platform-service identity, from tools/stdb_admin.py api-identity), STDB_HTTP and
+STDB_DB configure it; with no token, nothing is checked or logged.
 """
 from __future__ import annotations
 
+import asyncio
+import atexit
 import functools
+import hashlib
 import json
 import os
+import threading
 import time
 import traceback
+import urllib.request
 from pathlib import Path
 
 import msgpack
 import numpy as np
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 import mission as missions
@@ -93,6 +104,106 @@ class Policy:
 POLICIES = {p.name: Policy(p) for p in sorted(POLICY_DIR.iterdir()) if (p / "meta.json").exists()}
 
 app = FastAPI(title="Hazard Intelligence policy API", version="0.1")
+
+
+# ------------------------------------------------------------------------------------- keys and usage (SpacetimeDB)
+STDB_HTTP = os.environ.get("STDB_HTTP", "https://maincloud.spacetimedb.com").rstrip("/")
+STDB_DB = os.environ.get("STDB_DB", "ground-truth")
+STDB_TOKEN = os.environ.get("STDB_TOKEN", "")
+KEY_TTL_S = 60  # how long a key's state is trusted before asking again
+_keys: dict[str, tuple[float, bool]] = {}  # sha256 -> (checked at, valid)
+_calls: list[dict] = []
+_calls_lock = threading.Lock()
+
+
+def _stdb(path: str, body: bytes, ctype: str) -> bytes:
+    req = urllib.request.Request(f"{STDB_HTTP}/v1/database/{STDB_DB}/{path}", data=body, method="POST",
+                                 headers={"Authorization": f"Bearer {STDB_TOKEN}", "Content-Type": ctype})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return r.read()
+
+
+def key_of(headers) -> str:
+    auth = headers.get("authorization") or ""
+    for scheme in ("Bearer ", "Api-Key "):
+        if auth.startswith(scheme):
+            return auth[len(scheme):].strip()
+    return (headers.get("x-api-key") or "").strip()
+
+
+def key_valid(key: str) -> bool | None:
+    """True or False for a key, None when there is no database to ask (then the key is not enforced)."""
+    if not STDB_TOKEN:
+        return None
+    h = hashlib.sha256(key.encode()).hexdigest()
+    hit = _keys.get(h)
+    if hit and time.time() - hit[0] < KEY_TTL_S:
+        return hit[1]
+    try:
+        rows = json.loads(_stdb("sql", f"SELECT revoked FROM service_api_key WHERE hash = '{h}'".encode(), "text/plain"))[0]["rows"]
+    except Exception as e:  # noqa: BLE001  the database is down: serve, and ask again next time
+        print(f"[api] key check failed: {e}")
+        return None
+    ok = bool(rows) and not rows[0][0]
+    _keys[h] = (time.time(), ok)
+    return ok
+
+
+def log_call(key: str, path: str, status: int, ms: float):
+    if not STDB_TOKEN:
+        return
+    parts = path.strip("/").split("/")
+    if parts[:2] == ["v1", "policies"]:
+        pid = parts[2] if len(parts) > 2 else ""
+        route = parts[3] if len(parts) > 3 else ("spec" if pid else "list")
+    elif parts[:2] == ["v1", "missions"]:
+        pid, route = "", "missions"
+    else:
+        pid, route = "", parts[0] or "root"
+    with _calls_lock:
+        _calls.append({"key_hash": hashlib.sha256(key.encode()).hexdigest() if key else "", "policy_id": pid,
+                       "route": route, "status": int(status), "ms": round(float(ms), 3), "at_ms": int(time.time() * 1000)})
+        del _calls[:-5000]  # if the database is unreachable for long, keep the newest
+
+
+def flush_calls():
+    with _calls_lock:
+        batch, _calls[:] = _calls[:1000], _calls[1000:]
+    if not batch:
+        return
+    try:
+        _stdb("call/log_api_calls", json.dumps({"calls": batch}).encode(), "application/json")
+    except Exception as e:  # noqa: BLE001
+        print(f"[api] usage log failed, keeping {len(batch)} calls: {e}")
+        with _calls_lock:
+            _calls[:0] = batch
+
+
+def _flusher():
+    while True:
+        time.sleep(2)
+        flush_calls()
+
+
+if STDB_TOKEN:
+    threading.Thread(target=_flusher, daemon=True).start()
+    atexit.register(flush_calls)
+
+
+@app.middleware("http")
+async def keys_and_usage(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path in ("/", "/healthz"):
+        return await call_next(request)
+    t0 = time.perf_counter()
+    key = key_of(request.headers)
+    if key and await asyncio.to_thread(key_valid, key) is False:
+        resp = JSONResponse({"detail": "invalid or revoked API key"}, status_code=401)
+    else:
+        resp = await call_next(request)
+    log_call(key, request.url.path, resp.status_code, (time.perf_counter() - t0) * 1e3)
+    return resp
+
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -150,7 +261,20 @@ def policy_infer(pid: str, req: InferRequest):
 
 
 async def _serve_ws(ws: WebSocket, p: Policy):
+    key = key_of(ws.headers) or ws.query_params.get("key", "")
+    if key and await asyncio.to_thread(key_valid, key) is False:
+        await ws.close(code=4401)
+        log_call(key, f"/v1/policies/{p.meta['id']}/ws", 401, 0.0)
+        return
+    t_open = time.perf_counter()
     await ws.accept()
+    try:
+        await _serve_ws_loop(ws, p)
+    finally:
+        log_call(key, f"/v1/policies/{p.meta['id']}/ws", 101, (time.perf_counter() - t_open) * 1e3)
+
+
+async def _serve_ws_loop(ws: WebSocket, p: Policy):
     await ws.send_bytes(packb(p.meta))
     prev_total = None
     while True:

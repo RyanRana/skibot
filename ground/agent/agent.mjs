@@ -11,7 +11,7 @@
 // XAI_API_KEY (Grok; without it replies are scripted), XAI_MODEL (default grok-4), GT_SERVER (default http://127.0.0.1:8770),
 // STDB_URI (ws://127.0.0.1:3000 local, wss://maincloud.spacetimedb.com hosted; unset = no ski game), STDB_DB (ground-truth),
 // GAME_URL, BOARD_URL, COURSE_NAME (Streif).
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -28,7 +28,9 @@ process.env.SPECTRUM_PROJECT_SECRET ||= process.env.PHOTON_PROJECT_SECRET
 const { Spectrum, attachment } = await import('spectrum-ts')
 const { createBrain, grok } = await import('./brain.mjs')
 const { groundServer } = await import('./server.mjs')
-const { Store, key } = await import('./state.mjs')
+const { Store, key, STATE_PATH } = await import('./state.mjs')
+const { startAppSync } = await import('./mirror.mjs')
+const TOKEN_PATH = join(dirname(STATE_PATH), 'agent_stdb.json')  // the agent's SpacetimeDB identity, per database
 
 const server = groundServer()
 
@@ -70,12 +72,18 @@ let mountain = null
 if (STDB_URI) {
   const { DbConnection, tables } = await import('./module_bindings/index.ts')
   const STDB_DB = process.env.STDB_DB || 'ground-truth'
+  // One identity per database, kept across restarts, so the agent stays a service of the app's organisation.
+  const tokens = existsSync(TOKEN_PATH) ? JSON.parse(readFileSync(TOKEN_PATH, 'utf8')) : {}
   const conn = DbConnection.builder().withUri(STDB_URI).withDatabaseName(STDB_DB).withConfirmedReads(false)
-    .onConnect((c, id) => {
+    .withToken(tokens[`${STDB_URI}/${STDB_DB}`])
+    .onConnect((c, id, token) => {
       console.log(`[stdb] connected to ${STDB_URI}/${STDB_DB} as ${id.toHexString().slice(0, 12)}`)
+      tokens[`${STDB_URI}/${STDB_DB}`] = token
+      mkdirSync(dirname(TOKEN_PATH), { recursive: true })
+      writeFileSync(TOKEN_PATH, JSON.stringify(tokens))
       c.subscriptionBuilder()
-        .onApplied(() => { console.log('[stdb] synced'); drainStdb() })
-        .subscribe([tables.player, tables.run, tables.datasetStats, tables.hikeStats, tables.outbox, tables.challenge, tables.skier, tables.runPhoto])
+        .onApplied(() => { console.log('[stdb] synced'); drainStdb(); startAppSync(c, id, store) })
+        .subscribe([tables.player, tables.run, tables.datasetStats, tables.hikeStats, tables.outbox, tables.challenge, tables.skier, tables.runPhoto, tables.myTenant])
       c.db.outbox.onInsert(() => drainStdb())
     })
     .onConnectError((_c, e) => console.error(`[stdb] CONNECT ERROR to ${STDB_URI}/${STDB_DB}:`, e?.message || e))
@@ -135,6 +143,7 @@ async function drainStdb() {
             const out = brain.deliver(m, photo)
             await sendTo(handle, out.parts)
             console.log(`[agent] sent ${m.kind} to ${handle} (${m.joinCode})`)
+            store.onMessage?.(key(handle), { role: 'assistant', content: out.parts.filter((x) => typeof x === 'string').join('\n'), at: Date.now() }, m.kind)
           } catch (e) {
             console.error(`[agent] SEND FAILED for ${m.kind} to ${handle}:`, e.message)
           }

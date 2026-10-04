@@ -34,6 +34,9 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddApiKeyReducer from "./add_api_key_reducer";
+import AddMemberIdentityReducer from "./add_member_identity_reducer";
+import AddPlatformServiceReducer from "./add_platform_service_reducer";
 import ClaimHikeWriterReducer from "./claim_hike_writer_reducer";
 import ClaimPlatformAdminReducer from "./claim_platform_admin_reducer";
 import CloseCaptureReducer from "./close_capture_reducer";
@@ -41,12 +44,14 @@ import CloseRecordingReducer from "./close_recording_reducer";
 import CreateChallengeReducer from "./create_challenge_reducer";
 import CreateInviteReducer from "./create_invite_reducer";
 import CreateTenantReducer from "./create_tenant_reducer";
+import DeleteAppUserReducer from "./delete_app_user_reducer";
 import DeleteHikesReducer from "./delete_hikes_reducer";
 import DeleteItemReducer from "./delete_item_reducer";
 import FinishRunReducer from "./finish_run_reducer";
 import JoinReducer from "./join_reducer";
 import LabelHikeReducer from "./label_hike_reducer";
 import LinkCodeReducer from "./link_code_reducer";
+import LogApiCallsReducer from "./log_api_calls_reducer";
 import MarkSentReducer from "./mark_sent_reducer";
 import OpenCaptureReducer from "./open_capture_reducer";
 import PushAreasReducer from "./push_areas_reducer";
@@ -65,6 +70,8 @@ import PutTerrainReducer from "./put_terrain_reducer";
 import RecordHikeReducer from "./record_hike_reducer";
 import RedeemInviteReducer from "./redeem_invite_reducer";
 import RemoveMemberReducer from "./remove_member_reducer";
+import RemovePlatformServiceReducer from "./remove_platform_service_reducer";
+import RevokeApiKeyReducer from "./revoke_api_key_reducer";
 import RevokeInviteReducer from "./revoke_invite_reducer";
 import SendCheerReducer from "./send_cheer_reducer";
 import SetActiveTenantReducer from "./set_active_tenant_reducer";
@@ -73,6 +80,10 @@ import SetProfileReducer from "./set_profile_reducer";
 import SetStateReducer from "./set_state_reducer";
 import StartRunReducer from "./start_run_reducer";
 import UpdateTenantReducer from "./update_tenant_reducer";
+import UpsertAppInviteReducer from "./upsert_app_invite_reducer";
+import UpsertAppMessageReducer from "./upsert_app_message_reducer";
+import UpsertAppSessionReducer from "./upsert_app_session_reducer";
+import UpsertAppUserReducer from "./upsert_app_user_reducer";
 import UpsertCourseReducer from "./upsert_course_reducer";
 import UpsertEvaluationReducer from "./upsert_evaluation_reducer";
 import UpsertPolicyReducer from "./upsert_policy_reducer";
@@ -96,6 +107,12 @@ import HikeRow from "./hike_table";
 import HikeChunkRow from "./hike_chunk_table";
 import HikeStatsRow from "./hike_stats_table";
 import MyAccountRow from "./my_account_table";
+import MyApiCallViewRow from "./my_api_call_view_table";
+import MyApiKeyViewRow from "./my_api_key_view_table";
+import MyAppInviteViewRow from "./my_app_invite_view_table";
+import MyAppMessageViewRow from "./my_app_message_view_table";
+import MyAppSessionViewRow from "./my_app_session_view_table";
+import MyAppUserViewRow from "./my_app_user_view_table";
 import MyAreaViewRow from "./my_area_view_table";
 import MyCourseViewRow from "./my_course_view_table";
 import MyEvaluationViewRow from "./my_evaluation_view_table";
@@ -118,6 +135,7 @@ import MyTrainRunViewRow from "./my_train_run_view_table";
 import MyTrainingSetViewRow from "./my_training_set_view_table";
 import OutboxRow from "./outbox_table";
 import PlayerRow from "./player_table";
+import PublicApiCallViewRow from "./public_api_call_view_table";
 import PublicAreaViewRow from "./public_area_view_table";
 import PublicCourseViewRow from "./public_course_view_table";
 import PublicEvaluationViewRow from "./public_evaluation_view_table";
@@ -138,6 +156,7 @@ import PublicTrainRunViewRow from "./public_train_run_view_table";
 import PublicTrainingSetViewRow from "./public_training_set_view_table";
 import RunRow from "./run_table";
 import RunPhotoRow from "./run_photo_table";
+import ServiceApiKeyViewRow from "./service_api_key_view_table";
 import SkierRow from "./skier_table";
 import TraceChunkRow from "./trace_chunk_table";
 
@@ -373,6 +392,48 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyAccountRow),
+  myApiCallView: __table({
+    name: 'my_api_call',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyApiCallViewRow),
+  myApiKeyView: __table({
+    name: 'my_api_key',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyApiKeyViewRow),
+  myAppInviteView: __table({
+    name: 'my_app_invite',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAppInviteViewRow),
+  myAppMessageView: __table({
+    name: 'my_app_message',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAppMessageViewRow),
+  myAppSessionView: __table({
+    name: 'my_app_session',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAppSessionViewRow),
+  myAppUserView: __table({
+    name: 'my_app_user',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAppUserViewRow),
   myAreaView: __table({
     name: 'my_area',
     indexes: [
@@ -513,6 +574,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyTrainingSetViewRow),
+  publicApiCallView: __table({
+    name: 'public_api_call',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicApiCallViewRow),
   publicAreaView: __table({
     name: 'public_area',
     indexes: [
@@ -639,10 +707,20 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, PublicTrainingSetViewRow),
+  serviceApiKeyView: __table({
+    name: 'service_api_key',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ServiceApiKeyViewRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("add_api_key", AddApiKeyReducer),
+  __reducerSchema("add_member_identity", AddMemberIdentityReducer),
+  __reducerSchema("add_platform_service", AddPlatformServiceReducer),
   __reducerSchema("claim_hike_writer", ClaimHikeWriterReducer),
   __reducerSchema("claim_platform_admin", ClaimPlatformAdminReducer),
   __reducerSchema("close_capture", CloseCaptureReducer),
@@ -650,12 +728,14 @@ const reducersSchema = __reducers(
   __reducerSchema("create_challenge", CreateChallengeReducer),
   __reducerSchema("create_invite", CreateInviteReducer),
   __reducerSchema("create_tenant", CreateTenantReducer),
+  __reducerSchema("delete_app_user", DeleteAppUserReducer),
   __reducerSchema("delete_hikes", DeleteHikesReducer),
   __reducerSchema("delete_item", DeleteItemReducer),
   __reducerSchema("finish_run", FinishRunReducer),
   __reducerSchema("join", JoinReducer),
   __reducerSchema("label_hike", LabelHikeReducer),
   __reducerSchema("link_code", LinkCodeReducer),
+  __reducerSchema("log_api_calls", LogApiCallsReducer),
   __reducerSchema("mark_sent", MarkSentReducer),
   __reducerSchema("open_capture", OpenCaptureReducer),
   __reducerSchema("push_areas", PushAreasReducer),
@@ -674,6 +754,8 @@ const reducersSchema = __reducers(
   __reducerSchema("record_hike", RecordHikeReducer),
   __reducerSchema("redeem_invite", RedeemInviteReducer),
   __reducerSchema("remove_member", RemoveMemberReducer),
+  __reducerSchema("remove_platform_service", RemovePlatformServiceReducer),
+  __reducerSchema("revoke_api_key", RevokeApiKeyReducer),
   __reducerSchema("revoke_invite", RevokeInviteReducer),
   __reducerSchema("send_cheer", SendCheerReducer),
   __reducerSchema("set_active_tenant", SetActiveTenantReducer),
@@ -682,6 +764,10 @@ const reducersSchema = __reducers(
   __reducerSchema("set_state", SetStateReducer),
   __reducerSchema("start_run", StartRunReducer),
   __reducerSchema("update_tenant", UpdateTenantReducer),
+  __reducerSchema("upsert_app_invite", UpsertAppInviteReducer),
+  __reducerSchema("upsert_app_message", UpsertAppMessageReducer),
+  __reducerSchema("upsert_app_session", UpsertAppSessionReducer),
+  __reducerSchema("upsert_app_user", UpsertAppUserReducer),
   __reducerSchema("upsert_course", UpsertCourseReducer),
   __reducerSchema("upsert_evaluation", UpsertEvaluationReducer),
   __reducerSchema("upsert_policy", UpsertPolicyReducer),

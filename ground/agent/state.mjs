@@ -32,8 +32,11 @@ export class Store {
 
   remember(handle, role, content) {
     const p = this.get(handle)
-    p.history.push({ role, content, at: Date.now() })
+    const entry = { role, content, at: Date.now() }
+    p.history.push(entry)
     p.history = p.history.slice(-HISTORY_TURNS)
+    p.forgotten = false  // they texted again after "delete my data": a new start
+    this.onMessage?.(key(handle), entry)
     this.save()
   }
 
@@ -42,7 +45,38 @@ export class Store {
     const tmp = this.path + '.tmp'
     writeFileSync(tmp, JSON.stringify(this.people, null, 1))
     renameSync(tmp, this.path)
+    this.flush()
   }
+
+  // The SpacetimeDB mirror. agent.mjs sets onPerson, onMessage and onForget once it is a service of the app's
+  // organisation; every person who changed since the last flush is handed over (their history goes as messages).
+  flush() {
+    if (!this.onPerson) return
+    this.sent ??= new Map()
+    for (const [k, p] of Object.entries(this.people)) {
+      if (p.forgotten) continue
+      const { history, ...rest } = p
+      const j = JSON.stringify(rest)
+      if (this.sent.get(k) === j) continue
+      this.sent.set(k, j)
+      this.onPerson(k, p)
+    }
+  }
+
+  // After "delete my data": the database forgets them too, and nothing is mirrored until they text again.
+  forget(handle) {
+    const p = this.get(handle)
+    p.forgotten = true
+    this.sent?.delete(key(handle))
+    this.onForget?.(key(handle))
+  }
+}
+
+// A message's id in the database: the person, when, who spoke, and a hash of the words, so a resync never duplicates.
+export function messageKey(k, m) {
+  let h = 5381
+  for (const ch of String(m.content)) h = ((h * 33) ^ ch.codePointAt(0)) >>> 0
+  return `${k}:${m.at}:${m.role}:${h.toString(16)}`
 }
 
 // One join code per person, shared by the ski game (typed on the laptop) and their hikes. SpacetimeDB only ever

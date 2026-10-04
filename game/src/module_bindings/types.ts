@@ -20,6 +20,100 @@ export const Account = __t.object("Account", {
 });
 export type Account = __Infer<typeof Account>;
 
+export const ApiCall = __t.object("ApiCall", {
+  id: __t.u64(),
+  tenant: __t.string(),
+  keyPrefix: __t.string(),
+  policyId: __t.string(),
+  route: __t.string(),
+  status: __t.u16(),
+  ms: __t.f32(),
+  at: __t.timestamp(),
+});
+export type ApiCall = __Infer<typeof ApiCall>;
+
+export const ApiCallIn = __t.object("ApiCallIn", {
+  keyHash: __t.string(),
+  policyId: __t.string(),
+  route: __t.string(),
+  status: __t.u16(),
+  ms: __t.f32(),
+  atMs: __t.u64(),
+});
+export type ApiCallIn = __Infer<typeof ApiCallIn>;
+
+export const ApiKey = __t.object("ApiKey", {
+  hash: __t.string(),
+  tenant: __t.string(),
+  prefix: __t.string(),
+  label: __t.string(),
+  createdBy: __t.identity(),
+  createdAt: __t.timestamp(),
+  lastUsedAt: __t.timestamp(),
+  calls: __t.u64(),
+  revoked: __t.bool(),
+});
+export type ApiKey = __Infer<typeof ApiKey>;
+
+export const AppInvite = __t.object("AppInvite", {
+  token: __t.string(),
+  tenant: __t.string(),
+  handle: __t.string(),
+  code: __t.string(),
+  link: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type AppInvite = __Infer<typeof AppInvite>;
+
+export const AppMessage = __t.object("AppMessage", {
+  id: __t.u64(),
+  key: __t.string(),
+  handle: __t.string(),
+  tenant: __t.string(),
+  direction: __t.string(),
+  kind: __t.string(),
+  text: __t.string(),
+  session: __t.string(),
+  status: __t.string(),
+  error: __t.string(),
+  at: __t.timestamp(),
+});
+export type AppMessage = __Infer<typeof AppMessage>;
+
+export const AppSession = __t.object("AppSession", {
+  id: __t.string(),
+  tenant: __t.string(),
+  handle: __t.string(),
+  code: __t.string(),
+  token: __t.string(),
+  status: __t.string(),
+  consent: __t.string(),
+  meta: __t.string(),
+  summary: __t.string(),
+  labels: __t.array(__t.string()),
+  error: __t.string(),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type AppSession = __Infer<typeof AppSession>;
+
+export const AppUser = __t.object("AppUser", {
+  handle: __t.string(),
+  tenant: __t.string(),
+  code: __t.string(),
+  name: __t.string(),
+  optedOut: __t.bool(),
+  pendingLabel: __t.string(),
+  pendingDelete: __t.bool(),
+  invites: __t.u32(),
+  notes: __t.array(__t.string()),
+  consentVersion: __t.string(),
+  consentedAt: __t.timestamp(),
+  firstSeen: __t.timestamp(),
+  lastSeen: __t.timestamp(),
+});
+export type AppUser = __Infer<typeof AppUser>;
+
 export const Area = __t.object("Area", {
   id: __t.u64(),
   key: __t.string(),
@@ -279,6 +373,24 @@ export type Member = __Infer<typeof Member>;
 export const MyAccount = __t.object("MyAccount", {});
 export type MyAccount = __Infer<typeof MyAccount>;
 
+export const MyApiCallView = __t.object("MyApiCallView", {});
+export type MyApiCallView = __Infer<typeof MyApiCallView>;
+
+export const MyApiKeyView = __t.object("MyApiKeyView", {});
+export type MyApiKeyView = __Infer<typeof MyApiKeyView>;
+
+export const MyAppInviteView = __t.object("MyAppInviteView", {});
+export type MyAppInviteView = __Infer<typeof MyAppInviteView>;
+
+export const MyAppMessageView = __t.object("MyAppMessageView", {});
+export type MyAppMessageView = __Infer<typeof MyAppMessageView>;
+
+export const MyAppSessionView = __t.object("MyAppSessionView", {});
+export type MyAppSessionView = __Infer<typeof MyAppSessionView>;
+
+export const MyAppUserView = __t.object("MyAppUserView", {});
+export type MyAppUserView = __Infer<typeof MyAppUserView>;
+
 export const MyAreaView = __t.object("MyAreaView", {});
 export type MyAreaView = __Infer<typeof MyAreaView>;
 
@@ -356,6 +468,14 @@ export const PlatformAdmin = __t.object("PlatformAdmin", {
 });
 export type PlatformAdmin = __Infer<typeof PlatformAdmin>;
 
+export const PlatformService = __t.object("PlatformService", {
+  identity: __t.identity(),
+  name: __t.string(),
+  kind: __t.string(),
+  addedAt: __t.timestamp(),
+});
+export type PlatformService = __Infer<typeof PlatformService>;
+
 export const Player = __t.object("Player", {
   identity: __t.identity(),
   name: __t.string(),
@@ -425,6 +545,9 @@ export const PoseSample = __t.object("PoseSample", {
   slopeDeg: __t.f32(),
 });
 export type PoseSample = __Infer<typeof PoseSample>;
+
+export const PublicApiCallView = __t.object("PublicApiCallView", {});
+export type PublicApiCallView = __Infer<typeof PublicApiCallView>;
 
 export const PublicAreaView = __t.object("PublicAreaView", {});
 export type PublicAreaView = __Infer<typeof PublicAreaView>;
@@ -590,6 +713,9 @@ export const SegmentIn = __t.object("SegmentIn", {
   meta: __t.string(),
 });
 export type SegmentIn = __Infer<typeof SegmentIn>;
+
+export const ServiceApiKeyView = __t.object("ServiceApiKeyView", {});
+export type ServiceApiKeyView = __Infer<typeof ServiceApiKeyView>;
 
 export const Skier = __t.object("Skier", {
   identity: __t.identity(),
