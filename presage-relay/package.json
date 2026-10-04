@@ -1,0 +1,17 @@
+{
+  "name": "presage-relay",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Presage SmartSpectra relay for the Hazard Intelligence game: camera frames in, heart rate and breathing out",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@smartspectra/node-sdk": "3.4.0",
+    "jpeg-js": "^0.4.4",
+    "ws": "^8.18.0"
+  }
+}

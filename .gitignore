@@ -48,3 +48,6 @@ spacetime/spacetimedb/dist/
 game/.rec/
 # Cached commentator speech from ElevenLabs
 game/.tts-cache/
+
+# Presage relay (Docker server) dependencies
+presage-relay/node_modules/

@@ -16,7 +16,7 @@ import { Audio } from './audio.ts';
 import { Powerups, POWER_COLOR, shieldBubble, magnetAura, type Pickup } from './powerups.ts';
 import { Recorder } from './recorder.ts';
 import { Vitals } from './vitals.ts';
-import { startPresage, PRESAGE_HINT, type PresageMessage } from './presage.ts';
+import { startPresage, presageEndpoint, PRESAGE_HINT, type PresageMessage } from './presage.ts';
 import { Commentator, P, pick } from './commentator.ts';
 
 const COURSE_SLUG = 'kitzbuhel-streif';
@@ -147,6 +147,8 @@ async function main() {
   const video = $('cam') as HTMLVideoElement;
   const body = new BodyTracker(video);
   const camCtx = ($('cam-canvas') as HTMLCanvasElement).getContext('2d')!;
+  // on the live site the camera stream goes to the Presage relay to read the pulse: say so on the start screen
+  if (presageEndpoint()?.remote && !params.has('nopresage')) $('pulse-note').hidden = false;
   const rec = params.has('watch') ? new Recorder($('cam-canvas') as HTMLCanvasElement, canvas) : null;
   const attractCtx = ($('attract-canvas') as HTMLCanvasElement).getContext('2d')!;
   let camStarted = false;
@@ -164,7 +166,7 @@ async function main() {
   });
   async function startCamera() {
     if (camStarted || noCam) return; camStarted = true;
-    try { await body.start(); await fillCameras(); hud.camLabel(`camera: ${body.cameraLabel || 'on'}`); if (!params.has('nopresage')) { vitals.status = 'connecting'; startPresage(video, onPresage); } }
+    try { await body.start(); await fillCameras(); hud.camLabel(`camera: ${body.cameraLabel || 'on'}`); const ep = presageEndpoint(); if (ep && !params.has('nopresage')) { vitals.status = 'connecting'; startPresage(video, onPresage, ep); } }
     catch (err) { console.warn(err); hud.camLabel(`no camera: ${String((err as Error)?.message ?? err).slice(0, 60)}`); }
   }
   if (!noCam) startCamera(); else hud.camLabel('keyboard mode');
