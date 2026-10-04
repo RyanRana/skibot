@@ -29,6 +29,13 @@
   .edge-lede { margin-top: 16px; max-width: 58ch; color: var(--muted); font-size: clamp(16px, 1.5vw, 18px); }
   .clips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 32px; }
   .clip img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--panel); }
+  .arch { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: start; gap: 18px; margin-top: 40px; }
+  .arch img, .arch video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--panel); }
+  .arch img { object-fit: contain; padding: 10px; }
+  .arch .arr { align-self: center; margin-top: -40px; font: 400 28px/1 var(--serif); color: var(--faint); }
+  .arch figcaption { margin-top: 12px; color: var(--muted); font-size: 14px; }
+  .arch figcaption b { display: block; margin-bottom: 4px; font: 500 11px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+  .arch-more { display: inline-block; margin-top: 28px; }
   .thesis { margin-top: clamp(40px, 7vh, 64px); font: 400 clamp(24px, 2.8vw, 34px)/1.28 var(--serif); max-width: 40ch; }
   .thesis a { border-bottom: 1px solid var(--line); }
   .thesis a:hover { border-color: var(--ink); }
@@ -85,7 +92,8 @@
   .next span.now { color: var(--ink); border-color: var(--ink); }
 
   @media (max-width: 820px) {
-    .demos, .ledger, .steps, .clips { grid-template-columns: 1fr; }
+    .demos, .ledger, .steps, .clips, .arch { grid-template-columns: 1fr; }
+    .arch .arr { display: none; }
     .ledger > div, .ledger > div + div { padding: 18px 0; border-left: 0; border-bottom: 1px solid var(--line); }
     .links a { grid-template-columns: 1fr auto; gap: 6px 16px; }
     .links a span { grid-column: 1; grid-row: 2; }
@@ -165,7 +173,7 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
   <section class="edge" id="edge">
     <span class="k">Why robots fall</span>
     <h2>Robots doing complex tasks fail on the edge cases.</h2>
-    <p class="edge-lede">A demo shows the run that worked. Deployment is everything else: a slick floor, a kitchen the robot has never seen, a shove nobody planned for. Physical Intelligence says it plainly: robots <a class="q" href="https://www.youtube.com/watch?v=Zn8yMaepzVk&t=12s" target="_blank" rel="noopener">"can only operate in environments they've been trained in."</a></p>
+    <p class="edge-lede">Physical Intelligence says it plainly: robots <a class="q" href="https://www.youtube.com/watch?v=Zn8yMaepzVk&t=12s" target="_blank" rel="noopener">"can only operate in environments they've been trained in."</a></p>
 
     <div class="clips">
       <figure class="clip">
@@ -180,43 +188,17 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
     </div>
 
     <p class="thesis">Robot data trails the data behind language models by an estimated <a href="https://vcresearch.berkeley.edu/news/are-we-truly-verge-humanoid-robot-revolution" target="_blank" rel="noopener">100,000 years</a>, so labs now pay people by the hour to move in front of cameras. Almost none of it records the ground underfoot, so we tie every motion to the terrain it happened on and train robots on that same ground.</p>
+
+    <div class="arch">
+      <figure><img src="media/tracks.svg" alt=""><figcaption><b>01 Capture</b>People move; every sample is tied to the ground under it.</figcaption></figure>
+      <span class="arr">→</span>
+      <figure><img src="media/terrain.svg" alt=""><figcaption><b>02 Rebuild</b>That exact ground becomes physics.</figcaption></figure>
+      <span class="arr">→</span>
+      <figure><video src="media/fleet.mp4" poster="media/fleet.jpg" autoplay muted loop playsinline></video><figcaption><b>03 Train</b>Robots practice there. Where they fall picks what to record next.</figcaption></figure>
+    </div>
+    <a class="more arch-more" href="how.html">See how it works →</a>
   </section>
 
-  <section class="loop">
-    <div class="loop-head">
-      <h2>Data, world, model. One loop that gets better every run.</h2>
-      <a class="more" href="how.html">See how it works →</a>
-    </div>
-    <div class="steps">
-      <div class="step">
-        <div class="fig"><img src="media/tracks.svg" alt="Six GoPro ski descents drawn on the Marmolada contours"></div>
-        <div class="body">
-          <span class="n">01 CAPTURE</span>
-          <h3>People move</h3>
-          <p>Phones, cameras and videos record how people move, and every sample is tied to the ground under it.</p>
-          <span class="cap">Marmolada · 6 descents, 79 min of GoPro motion at 100 Hz · Prochazka 2026, CC BY 4.0</span>
-        </div>
-      </div>
-      <div class="step">
-        <div class="fig"><img src="media/terrain.svg" alt="Contours of the Bellevarde run with the race line and gates"></div>
-        <div class="body">
-          <span class="n">02 REBUILD</span>
-          <h3>The ground becomes physics</h3>
-          <p>Any slope or trail on Earth becomes a physics world from elevation and map data, with snow that grips and slides like snow.</p>
-          <span class="cap">Val d'Isère · Bellevarde · 2 m elevation grid, 62 gates</span>
-        </div>
-      </div>
-      <div class="step">
-        <div class="fig"><video src="media/fleet.mp4" poster="media/fleet.jpg" autoplay muted loop playsinline></video></div>
-        <div class="body">
-          <span class="n">03 TRAIN</span>
-          <h3>Robots practice there</h3>
-          <p>Thousands of robots practice on that ground at once. Where they fall tells us what to record next.</p>
-          <span class="cap">100 Unitree G1 policies on one slope, in simulation</span>
-        </div>
-      </div>
-    </div>
-  </section>
 
   <section class="why">
     <p class="big">Ski patrol, rescue teams and mine crews work on ground no robot has learned. Robots learn to move from people, and <em>almost none of that motion records what was underfoot.</em></p>
