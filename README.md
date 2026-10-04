@@ -1,10 +1,10 @@
 # skibot
 
-Unitree G1 humanoids skiing real Olympic and World Cup pistes in MuJoCo. Type a resort name and the run's real slope becomes a MuJoCo heightfield. A pretrained whole body controller (NVIDIA GEAR-SONIC) keeps the robot moving like a person, and a small policy trained with PPO on thousands of parallel robots teaches it to ski: edge, carve through gates, hold speed and stay upright on terrain it has never seen.
+Unitree G1 humanoids skiing real Olympic and World Cup pistes in MuJoCo. Type a resort name and the run's real slope becomes a MuJoCo heightfield. A pretrained whole body controller (NVIDIA GEAR-SONIC) keeps the robot moving like a person, and a small policy trained with PPO on thousands of parallel robots teaches it to ski: edge, carve through gates, hold speed and stay upright on terrain it has never seen. 
 
 ## MHacks 2026: Ground Truth
 
-The hackathon build on top of this repo: ski the real Streif in the browser with your body (webcam pose), with the Unitree G1 copying you, everyone live on one shared mountain through SpacetimeDB, every run growing a motion-on-terrain dataset, and an iMessage agent on Photon that hands out join codes and texts results. See [GAME.md](GAME.md) for what it looks like, how it plays and how to run it (`scripts/dev.sh`). The long version of the idea is in [VISION.md](VISION.md).
+The hackathon build on top of this repo: ski the real Streif in the browser with your body (webcam pose), with the Unitree G1 copying you, everyone live on one shared mountain through SpacetimeDB, every run adding to a shared motion-on-terrain dataset, and an iMessage agent on Photon that hands out join codes and texts results. See [GAME.md](GAME.md) for what it looks like, how it plays and how to run it (`scripts/dev.sh`). The long version of the idea is in [VISION.md](VISION.md).
 
 ## Results so far
 
@@ -45,6 +45,8 @@ Ski physics checks on a rigid test sled against closed form answers:
 ```
 resort.py, course.py      any resort to a MuJoCo course (OSM + elevation)
 gopro.py                  GoPro IMU/GPS ski runs (Zenodo) matched to the terrain
+ground/                   Ground Truth: phone recorder server, trail registration, Photon iMessage agent (see ground/README.md)
+ios/GroundTruth/          iOS app that records a hike in the background and uploads it
 build_resorts.sh          builds a list of courses
 skisim/                   ski physics, terrain, scenes, SONIC, perturbation, fleet renders, pose from video
 skisim/tests/             physics and controller checks
