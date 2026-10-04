@@ -183,6 +183,8 @@ final class AppModel: ObservableObject {
             break
         }
         error = nil
+    }
+
     /// "Hold to discard" while recording: stops the sensors and deletes everything recorded, nothing is sent.
     func discardRecording() async {
         busy = true
