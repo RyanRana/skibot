@@ -86,14 +86,14 @@
   .step .cap { margin-top: auto; padding-top: 8px; font: 400 11px/1.5 var(--mono); color: var(--faint); }
 
   section.terrain { padding: clamp(72px, 12vh, 120px) 0; --go: #2b8a3e; }
-  .ground { list-style: none; margin-top: 14px; max-width: 420px; border-top: 1px solid var(--ink); }
+  .ground { list-style: none; margin-top: 18px; border-top: 1px solid var(--ink); }
   .ground li, .ground a { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
   .ground li { border-bottom: 1px solid var(--line); }
-  .ground li > b, .ground a { padding: 16px 0; }
-  .ground li > em { padding: 16px 0; }
+  .ground li > b, .ground a { padding: 22px 0; }
+  .ground li > em { padding: 22px 0; }
   .ground a { flex: 1; transition: padding 0.2s; }
   .ground a:hover { padding-left: 8px; }
-  .ground b { font: 400 22px/1.15 var(--serif); }
+  .ground b { font: 400 clamp(34px, 5vw, 64px)/1.05 var(--serif); }
   .ground em { font: 500 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; font-style: normal; color: var(--faint); }
   .ground li:not(.live) b { color: var(--faint); }
   .ground li.live b::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 10px; border-radius: 50%; background: var(--go); vertical-align: middle; }
