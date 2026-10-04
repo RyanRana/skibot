@@ -5,6 +5,7 @@
   "scripts": {
     "start": "tsx agent.mjs",
     "chat": "tsx agent.mjs --terminal",
+    "collect": "tsx collect.mjs",
     "test": "tsx test.mjs"
   },
   "dependencies": {

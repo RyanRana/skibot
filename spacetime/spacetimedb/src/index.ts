@@ -242,7 +242,60 @@ const hikeWriter = table(
   }
 );
 
-const spacetimedb = schema({ player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, tickTimer, hike, hikeChunk, hikeStats, hikeWriter });
+// ------------------------------------------------------------------------------------------ captures
+// One shape for every raw stream Ground Truth collects, for skiing and hiking alike:
+//   source 'phone'  IMU / GPS / barometer from the iPhone app
+//   source 'game'   G1 joint angles + root pose from the browser game
+//   source 'video'  joints estimated from a ski or hike video (the video file itself stays in object storage, see uri)
+// A capture declares its channels once; its chunks are flat f32 frames (frame-major, channels.length values per
+// frame), so a minute of 100 Hz x 30 channel data is one ~720 KB row with no per-sample field names or tags.
+// Regular streams set rateHz and leave tMs empty (frame i is at t0Ms + i*1000/rateHz); irregular ones send tMs.
+// Nothing reads these tables yet: they collect only, outside the game's and the agent's paths.
+const capture = table(
+  { name: 'capture', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    key: t.string().unique(),
+    owner: t.identity(), // only this identity can add to or close the capture
+    source: t.string().index('btree'), // phone, game, video
+    activity: t.string().index('btree'), // ski, hike
+    joinCode: t.string().index('btree'),
+    ref: t.string(), // run key, hike key or video id this capture belongs to
+    uri: t.string(), // where the raw video or file lives, if anywhere
+    channels: t.array(t.string()), // e.g. accX..gyroZ, lat, lon, or left_knee_joint..
+    rateHz: t.f32(), // 0 = irregular, tMs on every chunk
+    meta: t.string(), // JSON: device, placement, course, camera, model version
+    frames: t.u64(),
+    chunks: t.u32(),
+    closed: t.bool(),
+    startedAt: t.timestamp(),
+    endedAt: t.timestamp(),
+  }
+);
+
+const captureChunk = table(
+  { name: 'capture_chunk', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    captureKey: t.string().index('btree'),
+    seq: t.u32(),
+    t0Ms: t.u64(), // ms since the capture started
+    tMs: t.array(t.u32()), // per-frame offsets from t0Ms, only for irregular streams
+    data: t.array(t.f32()),
+  }
+);
+
+const captureStats = table(
+  { name: 'capture_stats', public: true },
+  {
+    key: t.string().primaryKey(), // source:activity, e.g. game:ski
+    captures: t.u64(),
+    frames: t.u64(),
+    values: t.u64(),
+  }
+);
+
+const spacetimedb = schema({ player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, tickTimer, hike, hikeChunk, hikeStats, hikeWriter, capture, captureChunk, captureStats });
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
@@ -530,4 +583,60 @@ export const deleteHikes = spacetimedb.reducer({ joinCode: t.string() }, (ctx, {
       motionSamples: s.motionSamples - samples, hikers: Math.max(0, s.hikers - 1),
     });
   }
+});
+
+// ---------------------------------------------------------------------------------------------- captures
+
+const SOURCES = ['phone', 'game', 'video'];
+const ACTIVITIES = ['ski', 'hike'];
+const CHUNK_VALUES_MAX = 262_144; // 1 MB of f32 per chunk
+
+function bumpCaptureStats(ctx: Ctx, key: string, captures: bigint, frames: bigint, values: bigint) {
+  const s = ctx.db.captureStats.key.find(key);
+  if (s) ctx.db.captureStats.key.update({ ...s, captures: s.captures + captures, frames: s.frames + frames, values: s.values + values });
+  else ctx.db.captureStats.insert({ key, captures, frames, values });
+}
+
+// Starts a capture. Opening the same key again by its owner is a no-op, so clients can retry freely.
+export const openCapture = spacetimedb.reducer(
+  { key: t.string(), source: t.string(), activity: t.string(), joinCode: t.string(), ref: t.string(), uri: t.string(), channels: t.array(t.string()), rateHz: t.f32(), meta: t.string() },
+  (ctx, a) => {
+    if (!SOURCES.includes(a.source)) throw new SenderError(`source must be one of ${SOURCES.join(', ')}`);
+    if (!ACTIVITIES.includes(a.activity)) throw new SenderError(`activity must be one of ${ACTIVITIES.join(', ')}`);
+    if (a.channels.length === 0 || a.channels.length > 512) throw new SenderError('1 to 512 channels');
+    if (!a.key || a.key.length > 64) throw new SenderError('key is 1 to 64 characters');
+    if (ctx.db.capture.key.find(a.key)) return;
+    ctx.db.capture.insert({ id: 0n, ...a, owner: ctx.sender, joinCode: a.joinCode.trim().toUpperCase(), meta: a.meta.slice(0, 8000), frames: 0n, chunks: 0, closed: false, startedAt: ctx.timestamp, endedAt: ctx.timestamp });
+    bumpCaptureStats(ctx, `${a.source}:${a.activity}`, 1n, 0n, 0n);
+  }
+);
+
+// A block of frames. Sending the same seq again replaces it (and the counts follow).
+export const pushCaptureChunk = spacetimedb.reducer(
+  { captureKey: t.string(), seq: t.u32(), t0Ms: t.u64(), tMs: t.array(t.u32()), data: t.array(t.f32()) },
+  (ctx, { captureKey, seq, t0Ms, tMs, data }) => {
+    const c = ctx.db.capture.key.find(captureKey);
+    if (!c) throw new SenderError('open the capture first');
+    if (!c.owner.equals(ctx.sender)) throw new SenderError('not your capture');
+    if (c.closed) throw new SenderError('capture is closed');
+    const width = c.channels.length;
+    if (data.length === 0 || data.length > CHUNK_VALUES_MAX || data.length % width !== 0) throw new SenderError(`data must be whole frames of ${width} values, at most ${CHUNK_VALUES_MAX}`);
+    const n = data.length / width;
+    if (c.rateHz <= 0 && tMs.length !== n) throw new SenderError('irregular capture: one tMs per frame');
+    if (c.rateHz > 0 && tMs.length !== 0) throw new SenderError('regular capture: leave tMs empty');
+    let frames = BigInt(n), chunks = 1;
+    for (const old of [...ctx.db.captureChunk.captureKey.filter(captureKey)]) {
+      if (old.seq !== seq) continue;
+      frames -= BigInt(old.data.length / width); chunks -= 1;
+      ctx.db.captureChunk.id.delete(old.id);
+    }
+    ctx.db.captureChunk.insert({ id: 0n, captureKey, seq, t0Ms, tMs, data });
+    ctx.db.capture.id.update({ ...c, frames: c.frames + frames, chunks: c.chunks + chunks, endedAt: ctx.timestamp });
+    bumpCaptureStats(ctx, `${c.source}:${c.activity}`, 0n, frames, frames * BigInt(width));
+  }
+);
+
+export const closeCapture = spacetimedb.reducer({ key: t.string() }, (ctx, { key }) => {
+  const c = ctx.db.capture.key.find(key);
+  if (c && !c.closed && c.owner.equals(ctx.sender)) ctx.db.capture.id.update({ ...c, closed: true, endedAt: ctx.timestamp });
 });
