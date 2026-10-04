@@ -61,6 +61,26 @@ def athletic_poses():
   return vec("neutral"), vec("left_turn"), vec("right_turn")
 
 
+# Racer's stance, as offsets on the video poses (rad): knees 17 deg deeper with hips and ankles matched so the feet
+# stay flat, torso 7 deg further forward, hands higher, closer in and elbows bent like a GS racer's. Used by
+# style="racing"; it moves SONIC's target pose too, so a checkpoint trained with it must be run with it.
+RACING_DELTA = {
+  "left_knee_joint": 0.30, "right_knee_joint": 0.30, "left_hip_pitch_joint": -0.22, "right_hip_pitch_joint": -0.22,
+  "left_ankle_pitch_joint": -0.08, "right_ankle_pitch_joint": -0.08, "waist_pitch_joint": 0.12,
+  "left_shoulder_pitch_joint": -0.29, "right_shoulder_pitch_joint": -0.29,
+  "left_shoulder_roll_joint": -0.24, "right_shoulder_roll_joint": 0.24, "left_elbow_joint": 0.46, "right_elbow_joint": 0.46,
+}
+
+# Tree scan: a horizontal fan of rays in front of the robot, distance to the nearest trunk, like a 2D lidar.
+N_RAYS = 15
+RAY_FOV_DEG = 200.0
+RAY_RANGE = 15.0
+RAY_INFLATE = 0.6  # m added to each trunk for sensing; rays are 13 deg apart, 2.3 m at 10 m
+# Trees are obstacles as drawn: the 8-bit canopy reaches about 1.5x the trunk-and-branches radius in trees.npy, and
+# touching it ends the run. Keeping clear only of the bare radius let the robot ski through the visible branches.
+CANOPY = 1.6
+BODY_MARGIN = 0.35  # m, half the robot's width at the hips and skis
+
 FALL_BODIES = ("torso_link", "left_knee_link", "right_knee_link", "left_wrist_yaw_link", "right_wrist_yaw_link")
 HEIGHT_X = (-1.0, 0.0, 1.0, 2.0, 3.5, 5.0, 7.5, 10.0)
 HEIGHT_Y = (-1.5, 0.0, 1.5)
@@ -128,6 +148,13 @@ class SkiEnv:
     self.ski_pts_pelvis = torch.tensor(np.concatenate(pts) - mjd.xpos[self.pelvis], dtype=torch.float32, device=self.device)
 
     self.backend = backend
+    self.auto_reset = True
+    self.privileged_critic = True
+    self.style = "default"  # "racing": reward a racer's form (low stance, quiet hands forward, angulation, carving)
+    self.rew_ema = {}
+    self.explore_frac = 0.25  # share of resets sent to a random tile instead of the curriculum level
+    self.spawn_speed = (0.0, 9.0)  # m/s along the initial heading: real courses are skied at 8 to 10 m/s for minutes
+    self.last_fell = None
     if backend == "mujoco":
       # One world in plain CPU MuJoCo (fast for a single robot); float32 torch mirrors keep the env code identical.
       assert num_envs == 1, "the mujoco backend runs a single world"
@@ -164,12 +191,30 @@ class SkiEnv:
     z = np.load(Path(mosaic) / "mosaic_elevation.npy")
     self.grid = TorchGrid(z, meta["x0"], meta["y0"], meta["cell"], self.device)
     self.tile_y = torch.tensor([t["y_center_m"] for t in meta["tiles"]], dtype=torch.float32, device=self.device)
+    # Steeper tiles get wider turns: on a 25 degree pitch a skier only controls speed by crossing the fall line.
+    slope_deg = torch.tensor([t.get("mean_slope_deg", 10.0) for t in meta["tiles"]], dtype=torch.float32, device=self.device)
+    # Max heading off the fall line: 52 deg on gentle tiles up to 75 deg on steep ones. Real pistes traverse the hill;
+    # with the old 34 deg cap the robot could not follow a course line across the slope and ran off it.
+    self.tile_hmax = 0.9 + 0.4 * torch.clamp((slope_deg - 12.0) / 15.0, 0, 1)
     keys = ("mu_glide", "mu_skid", "mu_carve", "k_normal")
     defaults = {"mu_glide": self.p.mu_glide, "mu_skid": self.p.mu_skid, "mu_carve": self.p.mu_carve, "k_normal": self.p.k_normal}
     self.tile_snow = torch.tensor([[t.get("snow_params", defaults)[k] for k in keys] for t in meta["tiles"]],
                                   dtype=torch.float32, device=self.device)
     self.snow = {k: torch.full((num_envs, 1), defaults[k], device=self.device) for k in keys}
     self.n_tiles = len(self.tile_y)
+    # Trees per tile, padded: (n_tiles, K, 3) with x, y, radius. Tiles without trees get far-away dummies.
+    tree_file = Path(mosaic) / "trees.npy"
+    trees = np.load(tree_file) if tree_file.exists() else np.zeros((0, 5), np.float32)
+    per = [trees[trees[:, 4] == k][:, :3] for k in range(self.n_tiles)]
+    K = max(1, max((len(p) for p in per), default=1))
+    arr = np.zeros((self.n_tiles, K, 3), np.float32)
+    arr[..., :2], arr[..., 2] = 1e6, 0.1
+    for k, p in enumerate(per):
+      arr[k, : len(p)] = p
+    self.tile_trees = torch.tensor(arr, device=self.device)
+    self.n_trees = len(trees)
+    self.ray_angles = torch.deg2rad(torch.linspace(-RAY_FOV_DEG / 2, RAY_FOV_DEG / 2, N_RAYS, device=self.device))
+    self.tree_rays = torch.ones(num_envs, N_RAYS, device=self.device)
     self.tile_len = (self.grid.ncol - 1) * self.grid.cell
 
     # SONIC (frozen).
@@ -180,7 +225,8 @@ class SkiEnv:
     self.scale = f(scale)
     self.i2m, self.m2i = torch.tensor(I2M, device=self.device), torch.tensor(M2I, device=self.device)
     neutral, left, right = athletic_poses()
-    self.ref_neutral, self.ref_left, self.ref_right = f(neutral), f(left), f(right)
+    self._ref_base = (f(neutral), f(left), f(right))
+    self.ref_neutral, self.ref_left, self.ref_right = self._ref_base
     self.stance = self.ref_neutral
     self.ref_cur = self.ref_neutral.expand(num_envs, -1).clone()
 
@@ -195,10 +241,12 @@ class SkiEnv:
     self.last_action = torch.zeros(N, 31, device=self.device)
     self.prev_action = torch.zeros(N, 31, device=self.device)
     self.episode_length_buf = torch.zeros(N, dtype=torch.long, device=self.device)
-    self.level = torch.randint(0, 4, (N,), generator=self.gen, device=self.device)
+    self.level = torch.randint(0, min(4, self.n_tiles), (N,), generator=self.gen, device=self.device)
     self.tile = self.level.clone()
     self.start_x = torch.zeros(N, device=self.device)
     self.cmd_heading = torch.zeros(N, device=self.device)
+    self.cmd_goal = torch.zeros(N, device=self.device)
+    self.shield_on = torch.zeros(N, dtype=torch.bool, device=self.device)  # free-skiing heading before piste keeping and tree avoidance
     self.cmd_speed = torch.zeros(N, device=self.device)
     self.cmd_timer = torch.zeros(N, device=self.device)
     # Gates: alternating checkpoints down the tile. 80% of episodes race gates, 20% follow free heading commands.
@@ -209,7 +257,7 @@ class SkiEnv:
     self.use_gates = torch.ones(N, dtype=torch.bool, device=self.device)
     self.gates_hit = torch.zeros(N, device=self.device)
     self.gates_crossed = torch.zeros(N, device=self.device)
-    self.gate_frac = 0.8
+    self.gate_frac = 0.7
     self.ski_diag = None
     self.episode_sums = {}
     self.reset_idx(torch.arange(N, device=self.device))
@@ -277,10 +325,16 @@ class SkiEnv:
 
   def _resample_commands(self, ids):
     n = len(ids)
-    self.cmd_heading[ids] = self._rand(n, -0.6, 0.6)  # travel heading relative to the fall line (+x)
+    # Travel heading relative to the fall line (+x), biased back toward the middle of the run when off to one side.
+    off = self.qpos[ids, 1] - self.tile_y[self.tile[ids]]
+    hmax = self.tile_hmax[self.tile[ids]]
+    self.cmd_goal[ids] = torch.clamp(-0.5 * torch.tanh(off / 10.0) + (2 * self._rand(n, 0.0, 1.0) - 1) * (hmax - 0.1), -hmax, hmax)
     frac = self.tile[ids].float() / max(self.n_tiles - 1, 1)
     gate_speed = 4.0 + 7.0 * frac + self._rand(n, -1.0, 1.5)
-    self.cmd_speed[ids] = torch.where(self.use_gates[ids], gate_speed, self._rand(n, 3.0, 12.0))
+    # A quarter of free-skiing commands say stop (0 to 1.5 m/s): explicit braking practice, the skill the falls lack.
+    stop = torch.rand(n, generator=self.gen, device=self.device) < 0.25
+    free_speed = torch.where(stop, self._rand(n, 0.0, 1.5), self._rand(n, 3.0, 12.0))
+    self.cmd_speed[ids] = torch.where(self.use_gates[ids], gate_speed, free_speed)
     self.cmd_timer[ids] = self._rand(n, 2.5, 5.0)
 
   def _place_gates(self, ids, spacing=None, amp=None):
@@ -288,11 +342,22 @@ class SkiEnv:
     k = torch.arange(self.G, device=self.device)[None]
     frac = (self.tile[ids].float() / max(self.n_tiles - 1, 1))[:, None]
     sp = self._rand(n, 10.0, 16.0)[:, None] if spacing is None else torch.full((n, 1), float(spacing), device=self.device)
-    am = (1.0 + (0.5 + 3.0 * frac) * torch.rand(n, 1, generator=self.gen, device=self.device)) if amp is None \
+    steep = ((self.tile_hmax[self.tile[ids]] - 0.9) / 0.4)[:, None]
+    am = (1.0 + (0.5 + 3.0 * frac + 4.0 * steep) * torch.rand(n, 1, generator=self.gen, device=self.device)) if amp is None \
       else torch.full((n, 1), float(amp), device=self.device)
     side = torch.where(torch.rand(n, 1, generator=self.gen, device=self.device) < 0.5, -1.0, 1.0)
     gx = self.start_x[ids, None] + self._rand(n, 6.0, 10.0)[:, None] + sp * k
     gy = self.tile_y[self.tile[ids], None] + side * (1.0 - 2.0 * (k % 2)) * am + 0.5 * (torch.rand(n, self.G, generator=self.gen, device=self.device) - 0.5)
+    # Keep gates clear of trees: push any gate within 3 m of a trunk sideways, away from that tree.
+    trees = self.tile_trees[self.tile[ids]]  # (n, K, 3)
+    yc = self.tile_y[self.tile[ids], None]
+    for _ in range(3):
+      d = torch.linalg.norm(torch.stack([gx, gy], -1)[:, :, None, :] - trees[:, None, :, :2], dim=-1) - CANOPY * trees[:, None, :, 2]
+      dmin, j = d.min(-1)  # (n, G)
+      ty = torch.gather(trees[..., 1], 1, j)
+      away = torch.where(gy >= ty, 1.0, -1.0)
+      gy = torch.where(dmin < 4.0, gy + away * (4.0 - dmin + 0.2), gy)
+      gy = torch.clamp(gy, yc - 12.0, yc + 12.0)
     beyond = gx > self.tile_len - 12
     self.gate_x[ids] = torch.where(beyond, torch.full_like(gx, 1e6), gx)
     self.gate_y[ids] = torch.where(beyond, self.tile_y[self.tile[ids], None].expand_as(gy), gy)
@@ -313,20 +378,81 @@ class SkiEnv:
     # Look ahead: inside the last 6 m before a gate, aim partly at the gate after it (a racing line, not a zig-zag).
     w = torch.clamp(1 - (gx - self.qpos[:, 0]) / 6.0, 0, 1) * 0.5 * (nx < 1e5).float()
     ax, ay = (1 - w) * gx + w * nx, (1 - w) * gy + w * ny
-    bearing = torch.clamp(torch.atan2(ay - self.qpos[:, 1], torch.clamp(ax - self.qpos[:, 0], min=1.5)), -0.6, 0.6)
+    hmax = self.tile_hmax[self.tile]
+    bearing = torch.clamp(torch.atan2(ay - self.qpos[:, 1], torch.clamp(ax - self.qpos[:, 0], min=1.5)), -hmax, hmax)
     has_gate = self.use_gates & any_left & (gx < 1e5)
-    target = torch.where(has_gate, bearing, torch.zeros_like(bearing))
+    # Free skiing stays on the piste: the goal heading bends back toward the middle from 8 m off center, fully by 14 m
+    # (the tree lines start 17.5 m out).
+    off = self.qpos[:, 1] - self.tile_y[self.tile]
+    wall = -torch.sign(off) * torch.clamp((off.abs() - 8.0) / 6.0, 0, 1) * 1.2
+    free = torch.clamp(self.cmd_goal + wall, -hmax, hmax)
+    target = torch.where(has_gate, bearing, torch.where(self.use_gates, torch.zeros_like(bearing), free))
+    target = torch.clamp(self._avoid_trees(target), -hmax - 0.3, hmax + 0.3)
     if rate_limit:  # the commanded heading turns at most 1.5 rad/s
       step = 1.5 * self.dt * self.decimation
       target = self.cmd_heading + torch.clamp(target - self.cmd_heading, -step, step)
-    self.cmd_heading = torch.where(self.use_gates, target, self.cmd_heading)
+    # A caller that pins the command (showcase and live set cmd_timer huge) keeps its own free-mode heading.
+    auto = self.use_gates | (self.cmd_timer < 1e8)
+    self.cmd_heading = torch.where(auto, target, self.cmd_heading)
+
+  def set_style(self, style: str):
+    """'default' or 'racing' (racer's-form rewards and the deeper RACING_DELTA stance as SONIC's target)."""
+    self.style = style
+    delta = torch.zeros_like(self._ref_base[0])
+    if style == "racing":
+      for j, v in RACING_DELTA.items():
+        delta[JOINTS.index(j)] = v
+    self.ref_neutral, self.ref_left, self.ref_right = (r + delta for r in self._ref_base)
+    self.stance = self.ref_neutral
+    self.ref_cur = self.ref_neutral.expand(self.num_envs, -1).clone()
+
+  def _shield(self, horizon_s: float = 2.0):
+    """Hard tree constraint on the heading command, whatever set it (training, showcase, live viewer): if the line
+    the robot is actually travelling would bring it within a body width of a canopy in the next 2 s, the command
+    turns 35 degrees away from that tree, on the side the tree is not, until the line is clear. The planner bends
+    the commanded line early; this catches the robot when its real line drifts from the command."""
+    v = self.qvel[:, 0:2]
+    speed = v.norm(dim=-1)
+    u = v / speed.clamp(min=0.5)[:, None]
+    trees = self.tile_trees[self.tile]
+    rel = trees[..., :2] - self.qpos[:, None, 0:2]
+    along = (rel * u[:, None]).sum(-1)
+    lat = rel[..., 1] * u[:, None, 0] - rel[..., 0] * u[:, None, 1]
+    keep = CANOPY * trees[..., 2] + BODY_MARGIN + 0.5
+    reach = (horizon_s * speed).clamp(min=4.0)[:, None]
+    danger = (along > 0) & (along < reach) & (lat.abs() < keep)
+    j = torch.where(danger, along, torch.full_like(along, 1e9)).argmin(-1, keepdim=True)
+    l = lat.gather(1, j)[:, 0]
+    travel = torch.atan2(v[:, 1], v[:, 0])
+    safe = travel + torch.where(l > 0, -0.6, 0.6)
+    self.cmd_heading = torch.where(danger.any(-1) & (speed > 1.0), safe, self.cmd_heading)
+    self.shield_on = danger.any(-1) & (speed > 1.0)
+
+  def _avoid_trees(self, heading, clear: float = 2.5):
+    """Bend a heading around the first trunk on the line ahead: aim beside it on the side that needs the smaller
+    turn. The batched twin of showcase.steer_around_trees; two passes so the new line is checked too. Looks about
+    2.5 s ahead (12 to 35 m)."""
+    look = torch.clamp(2.5 * self.qvel[:, 0:2].norm(dim=-1), 12.0, 35.0)[:, None]
+    trees = self.tile_trees[self.tile]  # (N, K, 3)
+    rel = trees[..., :2] - self.qpos[:, None, 0:2]
+    need = CANOPY * trees[..., 2] + clear
+    for _ in range(2):
+      u = torch.stack([torch.cos(heading), torch.sin(heading)], -1)
+      along = (rel * u[:, None]).sum(-1)
+      lat = rel[..., 1] * u[:, None, 0] - rel[..., 0] * u[:, None, 1]  # + = tree left of the line
+      block = (along > 1.0) & (along < look) & (lat.abs() < need)
+      j = torch.where(block, along, torch.full_like(along, 1e9)).argmin(-1, keepdim=True)
+      a, l, n = along.gather(1, j)[:, 0], lat.gather(1, j)[:, 0], need.gather(1, j)[:, 0]
+      aim = l - torch.where(l > 0, n, -n)  # pass on the far side from the tree's offset
+      heading = torch.where(block.any(-1), heading + torch.atan2(aim, torch.clamp(a, min=2.0)), heading)
+    return heading
 
   def reset_idx(self, ids):
     if len(ids) == 0:
       return
     n = len(ids)
     rand_tile = torch.randint(0, self.n_tiles, (n,), generator=self.gen, device=self.device)
-    explore = torch.rand(n, generator=self.gen, device=self.device) < 0.25
+    explore = torch.rand(n, generator=self.gen, device=self.device) < self.explore_frac
     self.tile[ids] = torch.where(explore, rand_tile, self.level[ids])
     x = self._rand(n, 4.0, 12.0)
     y = self.tile_y[self.tile[ids]] + self._rand(n, -6.0, 6.0)
@@ -344,7 +470,7 @@ class SkiEnv:
     self.qpos[ids, 3:7] = mat_to_quat(R)
     self.qpos[ids, 7:] = self.stance + 0.03 * (torch.rand(n, 29, generator=self.gen, device=self.device) - 0.5)
     self.qvel[ids] = 0
-    v0 = self._rand(n, 0.0, 2.0)
+    v0 = self._rand(n, *self.spawn_speed)
     self.qvel[ids, 0:3] = xa * v0[:, None]
     self.ctrl[ids] = self.stance
     self.start_x[ids] = x
@@ -422,7 +548,59 @@ class SkiEnv:
 
   # ------------------------------------------------------------------------------------------------
   def get_observations(self):
-    return TensorDict({"actor": self.obs, "critic": self.obs}, batch_size=[self.num_envs])
+    critic = torch.cat([self.obs, self._privileged()], -1) if self.privileged_critic else self.obs
+    return TensorDict({"actor": self.obs, "critic": critic}, batch_size=[self.num_envs])
+
+  def _privileged(self):
+    """Critic-only information the robot cannot sense: true snow, slope, gate offset, nearest trees, time left."""
+    R, *_ = self._state()
+    yaw = torch.atan2(R[:, 1, 0], R[:, 0, 0])
+    c, s_ = torch.cos(yaw), torch.sin(yaw)
+    def to_body(dx, dy):
+      cc, ss = (c, s_) if dx.dim() == 1 else (c[:, None], s_[:, None])
+      return cc * dx + ss * dy, -ss * dx + cc * dy
+    snow = torch.cat([self.snow["mu_glide"] / 0.1, self.snow["mu_skid"] / 0.5, self.snow["mu_carve"] / 2.0,
+                      self.snow["k_normal"] / 80000.0], -1)
+    _, nrm = self.grid.height_normal(self.qpos[:, 0], self.qpos[:, 1])
+    nx, ny = to_body(nrm[:, 0], nrm[:, 1])
+    gx, gy, any_left = self._next_gate()
+    has = (self.use_gates & any_left & (gx < 1e5)).float()
+    gdx, gdy = to_body((gx - self.qpos[:, 0]) * has, (gy - self.qpos[:, 1]) * has)
+    trees = self.tile_trees[self.tile]
+    rel = trees[..., :2] - self.qpos[:, None, 0:2]
+    d = rel.norm(dim=-1) - CANOPY * trees[..., 2]
+    k = min(3, trees.shape[1])
+    idx = d.topk(k, largest=False).indices
+    near = torch.gather(rel, 1, idx[..., None].expand(-1, -1, 2))
+    tdx, tdy = to_body(near[..., 0], near[..., 1])
+    tr = torch.gather(trees[..., 2], 1, idx)
+    tree_feat = torch.stack([torch.clamp(tdx / 15, -2, 2), torch.clamp(tdy / 15, -2, 2), tr], -1).flatten(1)
+    if k < 3:
+      tree_feat = torch.cat([tree_feat, torch.zeros(self.num_envs, 3 * (3 - k), device=self.device)], -1)
+    t_frac = (self.episode_length_buf.float() / self.max_episode_length)[:, None]
+    priv = torch.cat([snow, torch.stack([nx, ny, nrm[:, 2]], -1), torch.stack([gdx / 20, gdy / 20, has], -1), tree_feat, t_frac], -1)
+    return torch.nan_to_num(priv, 0.0, 2.0, -2.0)
+
+  def _tree_scan(self, yaw):
+    """Ray distances (0..1 of RAY_RANGE) to the nearest tree trunk in each direction, and the closest clearance."""
+    trees = self.tile_trees[self.tile]  # (N, K, 3)
+    rel = trees[..., :2] - self.qpos[:, None, 0:2]  # (N, K, 2)
+    r = trees[..., 2]
+    ang = yaw[:, None] + self.ray_angles[None]  # (N, R)
+    u = torch.stack([torch.cos(ang), torch.sin(ang)], -1)  # (N, R, 2)
+    proj = torch.einsum("nrd,nkd->nrk", u, rel)
+    perp2 = (rel**2).sum(-1)[:, None, :] - proj**2
+    disc = (r[:, None, :] + RAY_INFLATE) ** 2 - perp2  # inflated trunks: nothing in range fits between two rays
+    t = proj - torch.sqrt(torch.clamp(disc, min=0))
+    t = torch.where((disc > 0) & (t > 0), t, torch.full_like(t, RAY_RANGE))
+    self.tree_rays = torch.clamp(t.min(-1).values, max=RAY_RANGE) / RAY_RANGE
+    return self.tree_rays
+
+  def _tree_clearance(self, xy):
+    """Distance from points (N, P, 2) to the nearest trunk surface on each env's tile: (N, P)."""
+    trees = self.tile_trees[self.tile]
+    d = torch.linalg.norm(xy[:, :, None, :] - trees[:, None, :, :2], dim=-1) - CANOPY * trees[:, None, :, 2]
+    return d.min(-1).values
 
   def _observations(self):
     R, ang, grav, q, dq = self._state()
@@ -446,6 +624,7 @@ class SkiEnv:
     obs = torch.cat([
       ang * 0.25, grav, vb * 0.2, q, dq * 0.05, self.last_action, ski, heights,
       torch.stack([torch.sin(dh), torch.cos(dh), self.cmd_speed / 10], -1),
+      self._tree_scan(yaw),
     ], -1)
     return torch.nan_to_num(obs, 0.0, 10.0, -10.0)
 
@@ -484,6 +663,7 @@ class SkiEnv:
     self.gates_hit += hit.float()
     self.gates_crossed += crossed.float()
     self._update_gate_command()
+    self._shield()
 
     # Rewards.
     R, ang, grav, q, dq = self._state()
@@ -503,15 +683,31 @@ class SkiEnv:
     e = d["edge"]
     edged = (e.abs() > math.radians(5)).all(-1)
     disagree = (edged & (torch.sign(e[:, 0]) != torch.sign(e[:, 1]))).float()
+    z = d["zones"]  # (N, 2 skis, 4): front-left, front-right, rear-left, rear-right normal force
+    front, rear = z[..., 0:2].sum((-1, -2)), z[..., 2:4].sum((-1, -2))
+    rear_frac = rear / (front + rear + 1e-6)
+    hw = torch.clamp(self.cmd_speed / 3.0, 0.25, 1.0)
+    on_snow = ((front + rear) > 50.0).float()
     r = {
       "ski_parallel": -1.5 * torch.clamp(yaw_gap.abs() - 0.12, min=0) ** 2 * 10,
       "ski_contact": -0.6 * airborne,
       "ski_width": -20.0 * torch.clamp((width - 0.24).abs() - 0.08, min=0) ** 2,
       "edge_agree": -0.4 * disagree,
-      "heading": 1.5 * torch.exp(-herr**2 / 0.15) * moving,
-      "gates": (3.0 * hit.float() - 1.0 * (crossed & ~hit).float()) / (self.dt * self.decimation),
-      "toward_target": 0.5 * torch.clamp((v[:, 0] * torch.cos(self.cmd_heading) + v[:, 1] * torch.sin(self.cmd_heading)) / 14.0, 0, 1),
+      # A stop command frees the heading (weight down to 0.25), so it can brake the way skiers do: turn across the hill.
+      "heading": 1.5 * torch.exp(-herr**2 / 0.15) * moving * hw,
+      # A sharp second term (sigma 8 deg): the broad one pays 80% at 13 deg off, which misses a 1.5 m gate from 8 m.
+      "heading_fine": 1.0 * torch.exp(-herr**2 / 0.02) * moving * hw,
+      # Weight on the tails (back seat) is how it falls backward at speed: penalize rear-heavy pressure.
+      "fore_aft": -1.0 * torch.clamp(rear_frac - 0.6, min=0) * on_snow,
+      "gates": (3.0 * hit.float() - 3.0 * (crossed & ~hit).float()) / (self.dt * self.decimation),
+      # Progress along the commanded heading, full marks at the commanded speed (it used to pay for speed up to 14 m/s).
+      "toward_target": 0.5 * torch.clamp((v[:, 0] * torch.cos(self.cmd_heading) + v[:, 1] * torch.sin(self.cmd_heading))
+                                         / torch.clamp(self.cmd_speed, min=2.0), 0, 1) * (self.cmd_speed > 2.0).float(),
       "speed": 0.5 * torch.exp(-(speed - self.cmd_speed) ** 2 / 8.0),
+      # Falls happen at a median 12 m/s against 8.6 m/s for clean runs, so speed control comes first. Slope 0.4 per
+      # m/s near the limit, saturating at -1.2: an unbounded penalty made every fast state worse than falling, and
+      # the policy learned to fall on purpose (fall rate 0.57 -> 0.80 in 450 iterations).
+      "overspeed": -1.2 * torch.tanh(torch.clamp(speed - self.cmd_speed - 1.5, min=0) / 3.0),
       "alive": 0.5 * torch.ones_like(speed),
       "upright": -0.2 * (grav[:, :2] ** 2).sum(-1),
       "action_rate": -0.01 * ((self.last_action - self.prev_action) ** 2).sum(-1),
@@ -523,26 +719,56 @@ class SkiEnv:
       "joint_vel": -1e-4 * (dq**2).sum(-1),
     }
 
+    if self.style == "racing":
+      # Racer's form. Stance and quiet hands weigh more; the body leans into each turn by as much as the turn's
+      # force asks (a racer's inclination, atan(a_lat / g)); edges carve instead of skidding while racing.
+      r["athletic"] = r["athletic"] * (0.4 / 0.15)
+      r["arms_quiet"] = r["arms_quiet"] * (0.15 / 0.05)
+      yaw_rate = (R @ ang[..., None])[:, 2, 0]
+      a_lat = speed * yaw_rate
+      left = torch.stack([-v[:, 1], v[:, 0], torch.zeros_like(speed)], -1) / speed.clamp(min=0.5)[:, None]
+      incl = torch.asin(torch.clamp((R[:, :, 2] * left).sum(-1), -1, 1))
+      fast = (speed > 4.0).float()
+      r["angulation"] = 0.6 * torch.exp(-(incl - torch.atan(a_lat / 9.81)) ** 2 / 0.03) * fast
+      slip = (d["v_l"].abs() / (d["v_t"].abs() + 1.0)).mean(-1)
+      r["carve"] = -0.5 * torch.clamp(slip - 0.15, min=0) * fast * (self.cmd_speed > 2.0).float()
+
     # Terminations.
     hp, _ = self.grid.height_normal(self.qpos[:, 0], self.qpos[:, 1])
     fb = self.xpos[:, self.fall_ids]
     hb, _ = self.grid.height_normal(fb[..., 0], fb[..., 1])
     fell = (R[:, 2, 2] < 0.45) | (self.qpos[:, 2] - hp < 0.4) | (fb[..., 2] - hb < 0.05).any(-1) | ~torch.isfinite(self.qpos).all(-1)
+    # Tree strike: pelvis or either ski within 15 cm of a trunk.
+    body_xy = torch.cat([self.qpos[:, None, 0:2], self.xpos[:, self.ski_ids, 0:2]], 1)
+    clearance = self._tree_clearance(body_xy)
+    clr = clearance.min(-1).values
+    hit_tree = clr < BODY_MARGIN
+    fell = fell | hit_tree
+    self.last_tree_hit = hit_tree
+    # Barrier: grows fast near a canopy (-0.75 at 1.25 m, -3 at contact), so close shaves never pay.
+    r["tree_near"] = -3.0 * torch.clamp(1 - clr / 2.5, min=0) ** 2
     off_tile = ((self.qpos[:, 1] - self.tile_y[self.tile]).abs() > 22) | (self.qpos[:, 0] > self.tile_len - 8)
     timeout = (self.episode_length_buf >= self.max_episode_length) | off_tile
-    r["termination"] = -20.0 * fell.float()
+    r["termination"] = -100.0 * fell.float()  # well above the value of an episode, so a fall never pays
     reward = sum(r.values()) * (self.dt * self.decimation)
     reward = torch.nan_to_num(reward, 0.0, 0.0, 0.0)
-    for k, val in r.items():
-      self.episode_sums[k] = self.episode_sums.get(k, 0) + val.mean().item() * (self.dt * self.decimation)
+    for k, val in r.items():  # kept on the device; read out only when logging
+      m = val.mean().detach()
+      self.rew_ema[k] = m if k not in self.rew_ema else 0.99 * self.rew_ema[k] + 0.01 * m
 
+    self.last_fell = fell
+    if not self.auto_reset:  # showcase runs: the caller decides what happens after a fall; no tile limits
+      self.obs = self._observations()
+      return self.get_observations(), reward, torch.zeros_like(fell), {"time_outs": torch.zeros_like(fell), "log": {}}
     done = fell | timeout
     ids = done.nonzero().flatten()
     extras = {"time_outs": timeout & ~fell, "log": {}}
     if len(ids):
       dist = self.qpos[ids, 0] - self.start_x[ids]
       up = (dist > 100) | (timeout[ids] & ~fell[ids])
-      down = fell[ids] & (dist < 25)
+      # Any fall short of the 100 m goal moves down (it used to need a fall inside 25 m, so levels kept rising while
+      # 80% of runs ended in a fall). Now the frontier sits where about half the runs succeed.
+      down = fell[ids] & (dist <= 100)
       self.level[ids] = torch.clamp(self.level[ids] + up.long() - down.long(), 0, self.n_tiles - 1)
       extras["log"] = {
         "Episode/fell_frac": fell[ids].float().mean().item(),
@@ -551,6 +777,9 @@ class SkiEnv:
         "Curriculum/mean_level": self.level.float().mean().item(),
         "Task/speed_mps": speed.mean().item(),
         "Task/heading_err_deg": math.degrees(herr.abs().mean().item()),
+        "Episode/tree_crash_frac": hit_tree[ids].float().mean().item(),
+        "Task/shield_frac": self.shield_on.float().mean().item(),
+        **dict(zip((f"Reward/{k}" for k in self.rew_ema), torch.stack(list(self.rew_ema.values())).tolist())),
       }
       g = ids[self.use_gates[ids] & (self.gates_crossed[ids] > 0)]
       if len(g):

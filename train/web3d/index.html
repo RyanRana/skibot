@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#cddbec">
+<title>G1 Ski Live 3D</title>
+<script type="importmap">
+{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+}}
+</script>
+<style>
+:root{
+  --ink:#0d1726; --muted:#55657d; --panel:rgba(255,255,255,.78); --panel-solid:#f4f7fb; --rule:rgba(13,23,38,.14);
+  --red:#d7262e; --blue:#2554d8; --accent:#2554d8; --good:#0f8a5f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#cddbec;color:var(--ink);font:13px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-user-select:none;user-select:none}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+#fade{position:fixed;inset:0;background:#eef3fa;opacity:0;pointer-events:none}
+.panel{background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--rule);border-radius:10px}
+#hud{position:fixed;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));padding:10px 14px 10px;min-width:230px;max-width:min(360px,calc(100vw - 24px))}
+#move{font:800 26px/1.05 system-ui,-apple-system,sans-serif;letter-spacing:.01em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+#move i{display:inline-block;width:6px;height:24px;border-radius:2px;background:var(--red)}
+#move.crash{color:var(--red)}
+#speedrow{display:flex;align-items:baseline;gap:8px;margin:6px 0 4px}
+#kmh{font:700 30px/1 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+#unit{color:var(--muted)}
+.stats{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;font-variant-numeric:tabular-nums}
+.stats dt{color:var(--muted)} .stats dd{margin:0;text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#where{color:var(--muted);font-size:12px;margin-top:6px;max-width:330px}
+#perf{color:var(--muted);font:11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:4px}
+#bar{position:fixed;left:max(12px,env(safe-area-inset-left));bottom:max(12px,env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:6px;max-width:calc(100vw - 200px);padding:6px}
+button,select{font:600 13px/1 system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--panel-solid);border:1px solid var(--rule);border-radius:7px;padding:9px 11px;cursor:pointer;touch-action:manipulation}
+button:hover{border-color:var(--accent)} button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+button#rec[aria-pressed=true]{background:var(--red);border-color:var(--red)}
+#recs{max-width:150px}
+#replaybar{display:none;align-items:center;gap:6px;flex-wrap:wrap}
+#replaybar.on{display:flex}
+#seek{width:180px}
+#pad{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));width:190px;height:190px;touch-action:none;overflow:hidden}
+#pad .dot{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--red);box-shadow:0 0 0 4px rgba(215,38,46,.18);pointer-events:none}
+#pad .lab{position:absolute;left:8px;right:8px;bottom:6px;font-size:11px;color:var(--muted);pointer-events:none;text-align:center}
+#pad .ax{position:absolute;left:50%;top:8%;bottom:8%;border-left:1px dashed var(--rule);pointer-events:none}
+#loading{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(#9fc0e8,#e8eff8 60%);font:600 16px system-ui,sans-serif;color:var(--ink);transition:opacity .4s}
+#loading.done{opacity:0;pointer-events:none}
+#loading small{display:block;font-weight:400;color:var(--muted);margin-top:6px;text-align:center}
+#help{position:fixed;right:max(12px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));padding:8px 10px;color:var(--muted);font-size:12px;max-width:260px}
+#help b{color:var(--ink)}
+@media (max-width:700px){
+  #hud{min-width:0;padding:8px 10px;max-width:58vw}
+  #move{font-size:18px} #move i{height:18px;width:5px}
+  #kmh{font-size:22px}
+  .stats{font-size:11px} .stats dd{font-size:11px}
+  #where,#help,#perf{display:none}
+  #bar{max-width:calc(100vw - 150px);gap:5px;padding:0}
+  button,select{padding:8px 9px;font-size:12px}
+  #pad{width:136px;height:136px}
+  #seek{width:120px}
+}
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0" aria-label="3D view of the skiing robot. Drag to orbit, scroll or pinch to zoom, right-drag or two fingers to pan."></canvas>
+<div id="fade"></div>
+
+<div id="hud" class="panel" aria-live="polite">
+  <div id="move"><i></i><span id="label">Connecting</span></div>
+  <div id="speedrow"><span id="kmh">--</span><span id="unit">km/h</span></div>
+  <dl class="stats">
+    <dt>Gates</dt><dd id="gates">--</dd>
+    <dt>Policy</dt><dd id="policy">--</dd>
+    <dt>Run</dt><dd id="runinfo">--</dd>
+    <dt>FPS</dt><dd id="fps">--</dd>
+  </dl>
+  <div id="where"></div>
+  <div id="perf"></div>
+</div>
+
+<div id="help" class="panel"><b>Drag</b> orbit · <b>scroll</b> zoom · <b>right-drag</b> pan · <b>double-click</b> recenter<br>
+<b>C</b> chase cam · <b>arrows</b> steer/speed · <b>G</b> gates/free · <b>R</b> new run · <b>[ ]</b> tile</div>
+
+<div id="bar">
+  <button id="cam" aria-pressed="false" title="Chase camera (C)">Chase cam</button>
+  <button id="mode" aria-pressed="true" title="Gates or free steer (G)">Gates</button>
+  <button id="prev" title="Easier tile ([)">Easier</button>
+  <button id="next" title="Harder tile (])">Harder</button>
+  <button id="reset" title="New run (R)">New run</button>
+  <button id="rec" aria-pressed="false" title="Record this run to out/viewer3d">Rec</button>
+  <select id="recs" aria-label="Recordings"><option value="">Replays</option></select>
+  <span id="replaybar">
+    <button id="live">Back to live</button>
+    <button id="pause" aria-pressed="false">Pause</button>
+    <select id="rspeed" aria-label="Replay speed"><option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option></select>
+    <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+  </span>
+</div>
+
+<div id="pad" class="panel" aria-label="Steering pad: left and right to steer or set course curviness, up and down for speed">
+  <div class="ax"></div><div class="dot" id="dot"></div><div class="lab" id="padlab">steer / speed</div>
+</div>
+
+<div id="loading"><div><span id="loadmsg">Connecting to the simulator</span><small id="loadsub">three.js loads from the CDN</small></div></div>
+
+<script type="module" src="/viewer.js"></script>
+</body>
+</html>

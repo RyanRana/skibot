@@ -21,11 +21,12 @@ import torch
 from PIL import Image
 from rsl_rl.runners import OnPolicyRunner
 
+from skisim.draw import draw_trees
 from skisim.scene import g1_model
 from skisim.ski import SkiParams
 from skisim.terrain import HeightGrid
 from train.ski_env import ROOT, SkiEnv
-from train.train import runner_cfg
+from train.train import load_policy, runner_cfg
 
 FFMPEG = os.environ.get("FFMPEG", shutil.which("ffmpeg") or "ffmpeg")
 
@@ -41,9 +42,7 @@ def rollout(ckpt: str | None, seconds: float, per_tile: int = 1, zero_policy: bo
   if zero_policy:
     policy = lambda obs: torch.zeros(n, env.num_actions)
   else:
-    runner = OnPolicyRunner(env, runner_cfg(1, "tensorboard"), None, device="cpu")
-    runner.load(ckpt, map_location="cpu")
-    policy = runner.get_inference_policy(device="cpu")
+    policy = load_policy(env, ckpt)
   obs = env.get_observations()
   frames, first_fall, dist = [], np.full(n, np.nan), np.zeros(n)
   start_x = env.qpos[:, 0].clone()
@@ -127,6 +126,9 @@ def render(env, frames, out: Path, fps=25):
     cam.lookat[:] = c
     cam.distance, cam.azimuth, cam.elevation = 230.0, 200.0, -35.0
     ov.update_scene(data, cam)
+    tf = ROOT / "out/terrains/trees.npy"
+    if tf.exists():
+      draw_trees(ov.scene, np.load(tf), grid, c[:2], radius=200, max_trees=600)
     Image.fromarray(ov.render()).save(dirs["overview"] / f"{fi:04d}.png")
     canvas = Image.new("RGB", (240 * 4, 180 * 3))
     for k, i in enumerate(show):

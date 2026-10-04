@@ -57,14 +57,53 @@ def frame_angles(P):
     U = P[el] - P[sh]
     out[f"arm_fwd_{side}"] = float(np.arctan2(U @ fwd, -(U @ up)))
     outward = -right if side == "L" else right
-    out[f"arm_abd_{side}"] = float(np.arctan2(U @ outward, -(U @ up)))
+    # Sideways tilts as the angle out of the sagittal plane: a frontal-plane projection blows up when the thigh
+    # (or arm) points mostly forward, as it does in a ski crouch.
+    out[f"arm_abd_{side}"] = float(np.arcsin(np.clip(unit(U) @ outward, -1, 1)))
     thigh = P[kn] - P[hip]
-    out[f"leg_frontal_{side}"] = float(np.arctan2(thigh @ right, -(thigh @ up)))  # + = knee toward the skier's right
+    out[f"leg_frontal_{side}"] = float(np.arcsin(np.clip(unit(thigh) @ right, -1, 1)))  # + = knee toward the skier's right
   leg_len = np.linalg.norm(P[L_HIP] - P[L_AN]) + 1e-6
   mid_an = (P[L_AN] + P[R_AN]) / 2
   out["feet_right_of_hips"] = float(((mid_an - mid_hip) @ right) / leg_len)
   out["stance_width"] = float(abs((P[L_AN] - P[R_AN]) @ right) / (np.linalg.norm(P[L_HIP] - P[R_HIP]) + 1e-6))
   return out
+
+
+_FK = {}
+
+
+def fix_ski_yaw(q: dict, iters: int = 4) -> dict:
+  """Set each hip yaw so that foot (ski) points straight ahead of the pelvis.
+
+  With a deeply bent knee, hip roll swings the shank sideways and would twist the ski instead of tilting it;
+  the hip yaw that cancels that is found on the G1's own kinematics.
+  """
+  import mujoco
+  from skisim.scene import g1_model
+  from skisim.sonic import DEFAULT_ANGLES, JOINTS
+  from skisim.terrain import slope
+
+  if "m" not in _FK:
+    _FK["m"] = g1_model(slope(0.0, 4, 4, 1.0))
+    _FK["d"] = mujoco.MjData(_FK["m"])
+  m, d = _FK["m"], _FK["d"]
+  q = dict(q)
+  for side in ("left", "right"):
+    q.setdefault(f"{side}_hip_yaw_joint", 0.0)
+  foot = {s: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"{s}_ankle_roll_link") for s in ("left", "right")}
+  for _ in range(iters):
+    qj = DEFAULT_ANGLES.copy()
+    for j, v in q.items():
+      qj[JOINTS.index(j)] = v
+    d.qpos[:] = 0
+    d.qpos[3] = 1.0
+    d.qpos[7:] = qj
+    mujoco.mj_kinematics(m, d)
+    for s in ("left", "right"):
+      fx = d.xmat[foot[s]].reshape(3, 3)[:, 0]
+      yaw = float(np.arctan2(fx[1], fx[0]))  # pelvis is at identity, so this is the yaw relative to the pelvis
+      q[f"{s}_hip_yaw_joint"] = float(np.clip(q[f"{s}_hip_yaw_joint"] - yaw, -1.2, 1.2))
+  return q
 
 
 def to_g1(a: dict) -> dict:
@@ -76,7 +115,8 @@ def to_g1(a: dict) -> dict:
   q = {}
   for side, s in (("L", "left"), ("R", "right")):
     knee = float(np.clip(a[f"knee_{side}"], 0.2, 2.0))
-    dorsi = float(np.clip(a[f"dorsi_{side}"], -0.1, 0.8))
+    # Ski boots hold the shin forward; MediaPipe's heel/toe points are unreliable on boots, so floor it at 17 deg.
+    dorsi = float(np.clip(a[f"dorsi_{side}"], np.radians(17), 0.6))
     q[f"{s}_knee_joint"] = knee
     q[f"{s}_ankle_pitch_joint"] = -dorsi
     q[f"{s}_hip_pitch_joint"] = -(knee - dorsi)
@@ -87,7 +127,7 @@ def to_g1(a: dict) -> dict:
     q[f"{s}_shoulder_pitch_joint"] = float(np.clip(-a[f"arm_fwd_{side}"], -1.6, 0.6))  # G1: negative raises the arm forward
   extra = np.mean([a["torso_thigh_L"] - a["knee_L"] + a["dorsi_L"], a["torso_thigh_R"] - a["knee_R"] + a["dorsi_R"]])
   q["waist_pitch_joint"] = float(np.clip(extra, 0.0, 0.5))
-  return q
+  return fix_ski_yaw(q)
 
 
 def process(video: Path, every_s=0.2, overlay_dir=None, max_overlays=6):
@@ -117,6 +157,7 @@ def process(video: Path, every_s=0.2, overlay_dir=None, max_overlays=6):
       continue
     P = np.array([[p.x, -p.y, -p.z] for p in res.pose_world_landmarks.landmark])  # to a right-handed, y-up frame
     a = frame_angles(P)
+    a["landmarks"] = np.round(P, 4).tolist()
     # Skiing, not standing in the start house or finish area: knees and hips clearly flexed.
     if min(a["knee_L"], a["knee_R"]) < np.radians(25) or min(a["torso_thigh_L"], a["torso_thigh_R"]) < np.radians(25):
       continue
@@ -140,8 +181,41 @@ def process(video: Path, every_s=0.2, overlay_dir=None, max_overlays=6):
   return frames
 
 
+def symmetric_arms(h: dict) -> dict:
+  """Average left and right arm angles: their difference in broadcast video is mostly camera angle."""
+  h = dict(h)
+  for k in ("elbow", "arm_fwd", "arm_abd"):
+    m = (h[f"{k}_L"] + h[f"{k}_R"]) / 2
+    h[f"{k}_L"] = h[f"{k}_R"] = m
+  return h
+
+
+FLIP = ("hip_roll", "hip_yaw", "ankle_roll", "shoulder_roll", "shoulder_yaw", "wrist_roll", "wrist_yaw", "waist_roll", "waist_yaw")
+
+
+def mirror(q: dict) -> dict:
+  """Swap left and right, negating roll and yaw joints."""
+  out = {}
+  for k, v in q.items():
+    k2 = k.replace("left_", "TMP_").replace("right_", "left_").replace("TMP_", "right_")
+    out[k2] = -v if any(f in k for f in FLIP) else v
+  return out
+
+
+def symmetric_set(neutral: dict, left: dict, right: dict):
+  """Neutral averaged with its mirror (hip roll zeroed); each turn averaged with the mirror of the other turn."""
+  m = mirror(neutral)
+  n = {k: (neutral[k] + m[k]) / 2 for k in neutral}
+  for k in n:
+    if "hip_roll" in k:
+      n[k] = 0.0
+  mr = mirror(right)
+  lt = {k: (left[k] + mr[k]) / 2 for k in left}
+  return n, lt, mirror(lt)
+
+
 def summarize(frames):
-  keys = [k for k in frames[0] if k not in ("t", "video")]
+  keys = [k for k in frames[0] if k not in ("t", "video", "landmarks")]
   def med(fs):
     return {k: float(np.median([f[k] for f in fs])) for k in keys}
   lean = np.array([f["feet_right_of_hips"] for f in frames])
@@ -155,13 +229,27 @@ def summarize(frames):
   for name, fs in phases.items():
     if len(fs) < 5:
       continue
-    h = med(fs)
+    h = symmetric_arms(med(fs))
     out[name] = {"frames": len(fs), "human_deg": {k: round(float(np.degrees(v)), 1) if not k.startswith(("feet", "stance")) else round(v, 3) for k, v in h.items()},
-                 "g1": {k: round(v, 3) for k, v in to_g1(h).items()}}
+                 "g1_raw": {k: round(v, 3) for k, v in to_g1(h).items()}}
+  if all(k in out for k in ("neutral", "left_turn", "right_turn")):
+    n, lt, rt = (fix_ski_yaw(q) for q in symmetric_set(out["neutral"]["g1_raw"], out["left_turn"]["g1_raw"], out["right_turn"]["g1_raw"]))
+    for name, q in (("neutral", n), ("left_turn", lt), ("right_turn", rt)):
+      out[name]["g1"] = {k: round(v, 3) for k, v in q.items()}
+  for name in out:
+    out[name].setdefault("g1", out[name]["g1_raw"])
   return out
 
 
 def main():
+  if sys.argv[1:] == ["--from-frames"]:  # recompute the summary from the saved per-frame angles
+    all_frames = json.loads((ROOT / "data" / "pose" / "frames.json").read_text())
+    summary = summarize(all_frames)
+    summary["_meta"] = {"total_frames": len(all_frames), "from": "frames.json"}
+    (ROOT / "data" / "pose" / "ski_pose.json").write_text(json.dumps(summary, indent=1))
+    for name in ("neutral", "left_turn", "right_turn"):
+      print(name, summary[name]["g1"])
+    return
   videos = [Path(p) for p in sys.argv[1:]] or sorted((ROOT / "data" / "videos").glob("*.mp4"))
   overlay_dir = ROOT / "out" / "pose" / "overlays"
   overlay_dir.mkdir(parents=True, exist_ok=True)

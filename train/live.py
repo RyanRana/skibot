@@ -27,11 +27,12 @@ import numpy as np
 import torch
 from PIL import Image
 
+from skisim.draw import draw_trees
 from skisim.scene import g1_model
 from skisim.ski import SkiParams
 from skisim.terrain import HeightGrid
 from train.ski_env import ROOT, SkiEnv
-from train.train import runner_cfg
+from train.train import load_policy, runner_cfg
 
 MODAL = os.environ.get("MODAL_BIN", shutil.which("modal") or str(Path.home() / "mhacks-spikes/.venv/bin/modal"))
 LIVE_DIR = ROOT / "runs_live"
@@ -217,6 +218,30 @@ def tile_render_model(Z, meta, env, tile):
   return model, mujoco.MjData(model), mujoco.Renderer(model, H, W)
 
 
+def keep_above_snow(cam, grid: HeightGrid, clearance: float = 1.2):
+  """Lift the camera until it, and the line of sight near it, clear the snow (as in train/showcase.py).
+
+  A chase camera behind the skier on a steep pitch ends up inside the slope, where the hfield is invisible from
+  below. Raise the elevation first; if even a steep down-angle is not enough, shorten the distance.
+  """
+  fr = np.array([0.0, 0.25, 0.5, 0.75])
+  need = clearance * (1.0 - fr)  # full clearance at the lens, tapering toward the skier
+  look = np.asarray(cam.lookat, float)
+  for _ in range(60):
+    az, el = np.radians(cam.azimuth), np.radians(cam.elevation)
+    pos = look - cam.distance * np.array([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)])
+    pts = pos + fr[:, None] * (look - pos)
+    h, _ = grid.height_normal(pts[:, 0], pts[:, 1])
+    if np.all(pts[:, 2] >= h + need):
+      return
+    if cam.elevation > -80:
+      cam.elevation = max(cam.elevation - 2.0, -80.0)
+    elif cam.distance > 1.0:
+      cam.distance *= 0.85
+    else:
+      return
+
+
 def draw_gates(scene, env):
   """Gate poles as extra scene geoms: two poles per gate, red and blue alternating, passed gates faded."""
   if not bool(env.use_gates[0]):
@@ -252,6 +277,9 @@ def main():
   S.n_tiles = env.n_tiles
   meta = json.loads((terrain / "mosaic.json").read_text())
   Z = np.load(terrain / "mosaic_elevation.npy").astype(float)
+  tree_file = terrain / "trees.npy"
+  trees_all = np.load(tree_file) if tree_file.exists() else np.zeros((0, 5), np.float32)
+  draw_grid = HeightGrid(z=Z, x0=meta["x0"], y0=meta["y0"], cell=meta["cell"])
   cam = mujoco.MjvCamera()
   cam.type = mujoco.mjtCamera.mjCAMERA_FREE
   policy, loaded, falls, look = None, None, 0, None
@@ -277,9 +305,7 @@ def main():
       try:
         from rsl_rl.runners import OnPolicyRunner
 
-        runner = OnPolicyRunner(env, runner_cfg(1, "tensorboard"), None, device="cpu")
-        runner.load(str(want), map_location="cpu")
-        policy, loaded = runner.get_inference_policy(device="cpu"), want
+        policy, loaded = load_policy(env, str(want)), want
         print("now driving with", want, flush=True)
       except Exception as e:
         print("policy load failed:", e, flush=True)
@@ -298,6 +324,8 @@ def main():
       if renderer is not None:
         renderer.close()
       model, data, renderer = tile_render_model(Z, meta, env, tile)
+      renderer.close()
+      renderer = mujoco.Renderer(model, H, W, max_geom=6000)
       render_tile = tile
     env.cmd_speed[0] = speed
     if not gates_mode:
@@ -318,14 +346,17 @@ def main():
     if step % 2 == 0:
       data.qpos[:] = env.qpos[0].numpy()
       mujoco.mj_forward(model, data)
-      p = data.xpos[1].copy()
-      look = p if look is None or bool(done[0]) else 0.75 * look + 0.25 * p
-      v = env.qvel[0, 0:2].numpy()
+      v3 = env.qvel[0, 0:3].numpy()
+      p = data.xpos[1].copy() + v3 * 0.06  # lead the skier so fast runs stay framed
+      look = p if look is None or bool(done[0]) or np.linalg.norm(p - look) > 6 else 0.45 * look + 0.55 * p
+      v = v3[:2]
       head = np.degrees(np.arctan2(v[1], v[0])) if np.linalg.norm(v) > 0.5 else 0.0
-      cam.lookat[:] = look
+      cam.lookat[:] = look + np.array([0.0, 0.0, -0.3])  # skier sits slightly above image center
       cam.distance, cam.azimuth, cam.elevation = 5.0, head - 28, -16
+      keep_above_snow(cam, draw_grid)
       renderer.update_scene(data, cam)
       draw_gates(renderer.scene, env)
+      draw_trees(renderer.scene, trees_all[trees_all[:, 4] == tile] if len(trees_all) else trees_all, draw_grid, p[:2], radius=60)
       buf = io.BytesIO()
       Image.fromarray(renderer.render()).save(buf, format="JPEG", quality=72)
       d = env.ski_diag
