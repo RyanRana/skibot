@@ -20,7 +20,9 @@ image = (
 app = modal.App("hazard-intelligence-api", image=image)
 
 
-@app.function(cpu=1.0, memory=1024, scaledown_window=600, max_containers=1)  # missions live in memory
+# hi-stdb holds STDB_TOKEN, the API's SpacetimeDB identity (tools/stdb_admin.py api-identity): keys and usage logging.
+@app.function(cpu=1.0, memory=1024, scaledown_window=600, max_containers=1,  # missions live in memory
+              secrets=[modal.Secret.from_name("hi-stdb")])
 @modal.concurrent(max_inputs=64)
 @modal.asgi_app()
 def api():

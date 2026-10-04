@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import urllib.request
 from pathlib import Path
 
@@ -44,16 +45,23 @@ class PulledPolicy:
         return a[0] if single else a
 
 
-def pull(host: str, policy: str = "g1-ski", refresh: bool = False) -> PulledPolicy:
+def _headers(key: str | None) -> dict:
+    """An API key from the argument or HI_API_KEY. Public policies work without one."""
+    key = key or os.environ.get("HI_API_KEY")
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
+def pull(host: str, policy: str = "g1-ski", refresh: bool = False, key: str | None = None) -> PulledPolicy:
     base = host.rstrip("/")
     if not base.startswith("http"):
         base = "https://" + base
     d = CACHE / policy
     d.mkdir(parents=True, exist_ok=True)
     if refresh or not (d / "policy.onnx").exists():
-        with urllib.request.urlopen(f"{base}/v1/policies/{policy}") as r:
+        h = _headers(key)
+        with urllib.request.urlopen(urllib.request.Request(f"{base}/v1/policies/{policy}", headers=h)) as r:
             (d / "meta.json").write_bytes(r.read())
-        with urllib.request.urlopen(f"{base}/v1/policies/{policy}/onnx") as r:
+        with urllib.request.urlopen(urllib.request.Request(f"{base}/v1/policies/{policy}/onnx", headers=h)) as r:
             (d / "policy.onnx").write_bytes(r.read())
     return PulledPolicy(json.loads((d / "meta.json").read_text()), d / "policy.onnx")
 
@@ -75,7 +83,7 @@ def _unpack_array(obj):
 
 
 class HiPolicy:
-    def __init__(self, host: str = "ws://127.0.0.1:8000", policy: str = "g1-ski"):
+    def __init__(self, host: str = "ws://127.0.0.1:8000", policy: str = "g1-ski", key: str | None = None):
         import msgpack
         from websockets.sync.client import connect
 
@@ -85,7 +93,7 @@ class HiPolicy:
         if not base.startswith("ws"):
             base = "wss://" + base
         self.uri = f"{base}/v1/policies/{policy}/ws"
-        self.ws = connect(self.uri, compression=None, max_size=None)
+        self.ws = connect(self.uri, compression=None, max_size=None, additional_headers=_headers(key))
         self.metadata = self._unpackb(self.ws.recv())
 
     def infer(self, obs: dict) -> dict:

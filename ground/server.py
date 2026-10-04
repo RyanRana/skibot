@@ -20,6 +20,11 @@ agent sends from.
 - GET  /                                dashboard
 Everything that touches phone numbers (dashboard, outbox, user, trigger, label, delete) answers only on this Mac,
 never through the tunnel.
+
+With --stdb, the files here stay this server's working copy and SpacetimeDB gets every change too: people, invites,
+messages, sessions and each session's raw IMU, GPS and barometer streams, under the private app organisation
+(GT_TENANT, default ground-truth-app). At startup it copies over whatever it already has. Its identity must be a
+service of that organisation: set GT_SERVICE_INVITE to an invite code once, or have an owner add it (DATABASE.md).
 """
 from __future__ import annotations
 
@@ -50,7 +55,76 @@ SIGNUPS: dict[str, list[float]] = {}  # ip -> recent sign-up times (memory only)
 
 LOCK = threading.RLock()
 PUBLIC = {"url": None}
-STDB = {"db": None}  # ground.stdb.Stdb when --stdb is given: hikes go to the team's SpacetimeDB
+STDB = {"db": None, "app": False}  # ground.stdb.Stdb when --stdb is given: hikes go to the team's SpacetimeDB
+TENANT = os.environ.get("GT_TENANT", "ground-truth-app")  # the organisation that owns the app's people and sessions
+
+
+def handle_key(h: str | None) -> str:
+    """The agent's key for a person (ground/agent/state.mjs): +1 and ten digits, + and digits, or a lowercase email."""
+    if not h:
+        return ""
+    if "@" in h:
+        return h.strip().lower()
+    d = re.sub(r"\D", "", h)
+    return "+1" + d if len(d) == 10 else "+" + d
+
+
+def mirror(what: str, fn):
+    """Copies one change into SpacetimeDB. Best effort: the files here are already saved, so a failure is logged and
+    the next startup sync fills the gap."""
+    if not (STDB["db"] and STDB["app"]):
+        return
+    try:
+        fn(STDB["db"])
+    except Exception as e:  # noqa: BLE001
+        print(f"[ground] SPACETIMEDB {what} FAILED: {e}")
+
+
+def mirror_session(sid: str, status: str | None = None, **extra):
+    """The session's row: who (from its invite), consent, the phone's meta.json, the summary and labels."""
+    d = OUT / "sessions" / sid
+    if not (STDB["db"] and STDB["app"]) or not (d / "consent.json").exists():
+        return
+    consent = json.loads((d / "consent.json").read_text())
+    inv = _load("invites.json", {}).get(consent.get("token"), {})
+    st = session_status(sid)
+    meta = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
+    labels = [x["text"] for x in json.loads((d / "labels.json").read_text())] if (d / "labels.json").exists() else []
+    mirror(f"session {sid}", lambda db: db.app_session(
+        TENANT, sid, handle_key(inv.get("phone")), inv.get("code") or "", consent.get("token", ""), status or st.get("status", "consented"),
+        consent=consent, meta=meta, summary=extra.get("summary", st.get("summary")), labels=labels,
+        error=extra.get("error") or st.get("error") or st.get("stdb_error") or "", created=consent.get("received", 0)))
+
+
+def sync_to_stdb():
+    """Everything already on this Mac, copied into SpacetimeDB once at startup. Re-sending a row replaces it."""
+    if not (STDB["db"] and STDB["app"]):
+        return
+    db = STDB["db"]
+    invites, box = _load("invites.json", {}), _load("outbox.json", [])
+    for tok, v in invites.items():
+        mirror(f"invite {tok}", lambda db, tok=tok, v=v: db.app_invite(TENANT, tok, handle_key(v.get("phone")), v.get("code") or "",
+                                                                       v.get("link", ""), v.get("created", 0)))
+    for m in box:
+        mirror(f"message {m['id']}", lambda db, m=m: db.app_message(TENANT, m["id"], handle_key(m.get("to")), "out", m.get("kind", ""),
+                                                                    m.get("text", ""), m.get("session") or "", m.get("status", ""),
+                                                                    m.get("error") or "", m.get("created", 0)))
+    sdir = OUT / "sessions"
+    done = 0
+    for d in sorted(sdir.iterdir()) if sdir.exists() else []:
+        mirror_session(d.name)
+        if session_status(d.name).get("status") == "done":
+            try:
+                have = db.sql(f"SELECT key FROM my_recording WHERE ref = '{d.name}'")
+                if not have:
+                    from ground.schema import load_session
+                    meta, data, _ = load_session(d)
+                    db.phone_recordings(TENANT, d.name, data, meta)
+                    done += 1
+            except Exception as e:  # noqa: BLE001
+                print(f"[ground] SPACETIMEDB raw streams for {d.name} FAILED: {e}")
+    print(f"[ground] spacetimedb sync: {len(invites)} invites, {len(box)} messages, "
+          f"{len(list(sdir.iterdir())) if sdir.exists() else 0} sessions, {done} raw uploads")
 
 
 def _load(name: str, default):
@@ -75,7 +149,9 @@ def new_invite(phone: str | None, code: str | None = None) -> dict:
         inv[token] = {"phone": phone, "code": (code or "").strip().upper() or None, "created": time.time(),
                       "link": f"{PUBLIC['url']}/g/{token}"}
         _save("invites.json", inv)
-        return {"token": token, **inv[token]}
+        out = {"token": token, **inv[token]}
+    mirror("invite", lambda db: db.app_invite(TENANT, token, handle_key(phone), out["code"] or "", out["link"], out["created"]))
+    return out
 
 
 def enqueue(to: str | None, text: str, session: str | None = None, kind: str = "summary") -> dict | None:
@@ -88,7 +164,9 @@ def enqueue(to: str | None, text: str, session: str | None = None, kind: str = "
                "status": "pending", "created": time.time()}
         box.append(msg)
         _save("outbox.json", box)
-        return msg
+    mirror("message", lambda db: db.app_message(TENANT, msg["id"], handle_key(to), "out", kind, text, session or "", "pending",
+                                                at=msg["created"]))
+    return msg
 
 
 def us_phone(raw) -> str | None:
@@ -163,6 +241,8 @@ def user_hikes(phone: str) -> list[dict]:
 def delete_user(phone: str) -> dict:
     import shutil
     with LOCK:
+        if STDB["db"] and STDB["app"]:  # the person, their messages, sessions, raw streams and hikes, in one transaction
+            STDB["db"].delete_app_user(TENANT, handle_key(phone))
         if STDB["db"]:  # the database first: if it fails, nothing local is gone and the hiker can retry
             for code in {v.get("code") for v in _load("invites.json", {}).values()
                          if same_phone(v.get("phone"), phone) and v.get("code")}:
@@ -206,9 +286,14 @@ def try_finalize(sid: str):
             return
         if missing:
             _save("status.json", {"status": "uploading", "missing": missing}, d)
-            return
-        _save("status.json", {"status": "registering"}, d)
-    threading.Thread(target=_finalize, args=(sid,), daemon=True).start()
+            new = "uploading"
+        else:
+            _save("status.json", {"status": "registering"}, d)
+            new = "registering"
+    if new != st.get("status"):
+        mirror_session(sid, new)
+    if new == "registering":
+        threading.Thread(target=_finalize, args=(sid,), daemon=True).start()
 
 
 def _finalize(sid: str):
@@ -235,10 +320,18 @@ def _finalize(sid: str):
             st["outbox_id"] = msg and msg["id"]
             st["message_status"] = "pending" if msg else "no phone on invite, nothing to send"
         _save("status.json", st, d)
+        if STDB["db"] and STDB["app"]:  # the raw streams, then the session row that points at them
+            def raw(db):
+                from ground.schema import load_session
+                meta, data, _ = load_session(d)
+                db.phone_recordings(TENANT, sid, data, meta)
+            mirror(f"raw streams {sid}", raw)
+        mirror_session(sid, "done", summary=s)
         print(f"[ground] {sid} done\n{text}")
     except Exception as e:  # noqa: BLE001
         tb = traceback.format_exc()
         _save("status.json", {"status": "failed", "error": f"{type(e).__name__}: {e}", "traceback": tb}, d)
+        mirror_session(sid, "failed", error=f"{type(e).__name__}: {e}")
         print(f"[ground] {sid} REGISTRATION FAILED\n{tb}")
 
 
@@ -420,6 +513,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err(400, f"consent_version must be {CONSENT_VERSION}")
             rec = {**body, "received": time.time(), "ip": self.headers.get("CF-Connecting-IP") or self.client_address[0]}
             _save("consent.json", rec, OUT / "sessions" / sid)
+            mirror_session(sid, "consented")
             self._json({"ok": True, "session_id": sid})
         elif (p.startswith("/api/outbox/") or p in ("/api/trigger", "/api/label", "/api/delete")) and not self._local():
             self._err(404, "not found")
@@ -444,6 +538,7 @@ class Handler(BaseHTTPRequestHandler):
                 labels = json.loads((d / "labels.json").read_text()) if (d / "labels.json").exists() else []
                 labels.append({"text": text[:2000], "at": time.time(), "source": body.get("source", "agent")})
                 _save("labels.json", labels, d)
+            mirror_session(sid)
             st = session_status(sid)
             if STDB["db"] and st.get("stdb"):
                 try:
@@ -475,6 +570,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     return self._err(404, "no such message")
                 _save("outbox.json", box)
+            mirror("message status", lambda db: db.app_message(TENANT, msg["id"], handle_key(msg.get("to")), "out", msg.get("kind", ""),
+                                                               msg.get("text", ""), msg.get("session") or "", msg["status"],
+                                                               msg.get("error") or "", msg.get("created", 0)))
             self._json({"ok": True})
         else:
             self._err(404, "not found")
@@ -520,6 +618,22 @@ def main():
         STDB["db"] = Stdb(a.stdb, a.stdb_db, OUT / "stdb_identity.json")
         STDB["db"].claim()  # fails loudly if another identity already owns hike writes
         print(f"[ground] spacetimedb {STDB['db']}: hike writer claimed")
+        db = STDB["db"]
+        try:
+            if not db.member_of(TENANT) and os.environ.get("GT_SERVICE_INVITE"):
+                db.join(os.environ["GT_SERVICE_INVITE"])
+            role = db.member_of(TENANT)
+        except Exception as e:  # noqa: BLE001
+            role = None
+            print(f"[ground] spacetimedb membership check failed: {e}")
+        STDB["app"] = role in ("owner", "admin", "service")
+        if STDB["app"]:
+            print(f"[ground] spacetimedb: writing people, messages and sessions as {role} of {TENANT}")
+            threading.Thread(target=sync_to_stdb, daemon=True).start()
+        else:
+            print(f"[ground] WARNING: {db.identity()} is not a service of {TENANT} in spacetimedb, so people, messages and "
+                  f"sessions stay on this Mac. Fix: GT_SERVICE_INVITE=<code> or python tools/stdb_admin.py add-service "
+                  f"{db.identity()}")
     if not PUBLIC["url"]:
         print("[ground] WARNING: no --public url, invites will fail until you restart with one")
     print(f"[ground] http://127.0.0.1:{a.port}  public {PUBLIC['url']}")

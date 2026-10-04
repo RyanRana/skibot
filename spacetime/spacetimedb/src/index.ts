@@ -2,7 +2,7 @@
 // same time, every finished run grows the motion + terrain dataset, and the iMessage agent reads the
 // outbox to text people their results.
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx, type ViewCtx, type AnonymousViewCtx } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
+import { ScheduleAt, Timestamp } from 'spacetimedb';
 
 // One motion sample registered to the ground under it: where the body was, how it was leaning and
 // crouching, and the slope of the real terrain at that point. This is the record Ground Truth collects.
@@ -712,10 +712,132 @@ const evaluation = table(
   }
 );
 
+
+// --------------------------------------------------------------------------------------------- app users
+// The people using the Ground Truth app and its iMessage agent, keyed by their iMessage handle: a phone number in
+// E.164 (+19195550123) or an email. Phone numbers, messages and raw phone recordings are personal, so these rows
+// belong to the private ground-truth-app tenant and only its owners, admins and services (the phone server, the
+// agent) read them, through the my_app_* views. deleteAppUser removes a person and everything recorded for them.
+
+const appUser = table(
+  { name: 'app_user' },
+  {
+    handle: t.string().primaryKey(),
+    tenant: t.string().index('btree'),
+    code: t.string().index('btree'), // the join code shared by their game runs and hikes
+    name: t.string(),
+    optedOut: t.bool(), // texted STOP: nothing goes out until START
+    pendingLabel: t.string(), // the session the agent asked about and is waiting to hear back on
+    pendingDelete: t.bool(),
+    invites: t.u32(),
+    notes: t.array(t.string()), // what the agent remembers about them
+    consentVersion: t.string(),
+    consentedAt: t.timestamp(),
+    firstSeen: t.timestamp(),
+    lastSeen: t.timestamp(),
+  }
+);
+
+// Every text, both ways: what people sent the agent, what the agent and the server sent them.
+const appMessage = table(
+  { name: 'app_message' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    key: t.string().unique(), // the sender's own id, so a retry never duplicates
+    handle: t.string().index('btree'),
+    tenant: t.string().index('btree'),
+    direction: t.string(), // in, out
+    kind: t.string(), // chat, welcome, nudge, summary, result
+    text: t.string(),
+    session: t.string(),
+    status: t.string(), // out: pending, sent, failed
+    error: t.string(),
+    at: t.timestamp(),
+  }
+);
+
+// The /g/<token> links that open the app. The token is a secret: whoever has it can upload a session.
+const appInvite = table(
+  { name: 'app_invite' },
+  {
+    token: t.string().primaryKey(),
+    tenant: t.string().index('btree'),
+    handle: t.string().index('btree'),
+    code: t.string(),
+    link: t.string(),
+    createdAt: t.timestamp(),
+  }
+);
+
+// One recording session from the phone: consent, upload, registration. Its raw streams are recordings
+// phone/<id>/imu, phone/<id>/gps and phone/<id>/baro; the registered hike is the hike row with key <id>.
+const appSession = table(
+  { name: 'app_session' },
+  {
+    id: t.string().primaryKey(),
+    tenant: t.string().index('btree'),
+    handle: t.string().index('btree'),
+    code: t.string(),
+    token: t.string(),
+    status: t.string(), // consented, uploading, registering, done, failed
+    consent: t.string(), // JSON: version, placement, device, when, from where
+    meta: t.string(), // JSON: the phone's meta.json (device, gaps, pedometer, files)
+    summary: t.string(), // JSON: what ground/register.py measured
+    labels: t.array(t.string()),
+    error: t.string(),
+    createdAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+// ---------------------------------------------------------------------------------------- platform and API
+// Servers that act for every organisation: the policy API logs calls for whichever organisation owns the key.
+const platformService = table(
+  { name: 'platform_service' },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string(),
+    kind: t.string(), // api
+    addedAt: t.timestamp(),
+  }
+);
+
+// Model API keys. Only the SHA-256 of a key is stored; the key itself is shown once, to whoever made it.
+const apiKey = table(
+  { name: 'api_key' },
+  {
+    hash: t.string().primaryKey(),
+    tenant: t.string().index('btree'),
+    prefix: t.string(), // the first characters, to tell keys apart
+    label: t.string(),
+    createdBy: t.identity(),
+    createdAt: t.timestamp(),
+    lastUsedAt: t.timestamp(),
+    calls: t.u64(),
+    revoked: t.bool(),
+  }
+);
+
+// Every Model API call: which organisation (by key), which policy, which route, how it went.
+const apiCall = table(
+  { name: 'api_call' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    tenant: t.string().index('btree'), // the key's organisation; calls without a key count for the public tenant
+    keyPrefix: t.string(),
+    policyId: t.string().index('btree'),
+    route: t.string(), // list, spec, onnx, weights, infer, ws, missions
+    status: t.u16(),
+    ms: t.f32(),
+    at: t.timestamp(),
+  }
+);
+
 const spacetimedb = schema({
   player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, tickTimer, hike, hikeChunk, hikeStats,
   hikeWriter, capture, captureChunk, captureStats, account, tenant, member, invite, platformAdmin, resort, course, terrain,
   terrainChunk, trailNetwork, trail, area, recording, recordingChunk, pointSet, pointChunk, segment, referencePose, trainingSet, policy, trainRun, evaluation,
+  appUser, appMessage, appInvite, appSession, platformService, apiKey, apiCall,
 });
 export default spacetimedb;
 
@@ -990,6 +1112,10 @@ export const labelHike = spacetimedb.reducer({ key: t.string(), note: t.string()
 // "delete my data": every hike, chunk and hike text tied to a join code.
 export const deleteHikes = spacetimedb.reducer({ joinCode: t.string() }, (ctx, { joinCode }) => {
   requireHikeWriter(ctx);
+  dropHikes(ctx, joinCode);
+});
+
+function dropHikes(ctx: Ctx, joinCode: string) {
   const code = joinCode.trim().toUpperCase();
   if (!code) return;
   const s = hikeTotals(ctx);
@@ -1006,7 +1132,7 @@ export const deleteHikes = spacetimedb.reducer({ joinCode: t.string() }, (ctx, {
       motionSamples: s.motionSamples - samples, hikers: Math.max(0, s.hikers - 1),
     });
   }
-});
+}
 
 // ---------------------------------------------------------------------------------------------- captures
 
@@ -1558,12 +1684,7 @@ export const deleteItem = spacetimedb.reducer({ kind: t.string(), id: t.string()
       for (const w of [...ctx.db.area.network.filter(id)]) ctx.db.area.id.delete(w.id);
       ctx.db.trailNetwork.id.delete(id);
       break;
-    case 'recording':
-      check(ctx.db.recording.key.find(id));
-      for (const c of [...ctx.db.recordingChunk.recordingKey.filter(id)]) ctx.db.recordingChunk.id.delete(c.id);
-      for (const sg of [...ctx.db.segment.recordingKey.filter(id)]) ctx.db.segment.id.delete(sg.id);
-      ctx.db.recording.key.delete(id);
-      break;
+    case 'recording': check(ctx.db.recording.key.find(id)); dropRecording(ctx, id); break;
     case 'reference_pose': check(ctx.db.referencePose.id.find(id)); ctx.db.referencePose.id.delete(id); break;
     case 'training_set': check(ctx.db.trainingSet.id.find(id)); ctx.db.trainingSet.id.delete(id); break;
     case 'policy': check(ctx.db.policy.id.find(id)); ctx.db.policy.id.delete(id); break;
@@ -1714,3 +1835,236 @@ export const publicEvaluationView = spacetimedb.anonymousView({ name: 'public_ev
 export const myEvaluationView = spacetimedb.view({ name: 'my_evaluation', public: true }, t.array(evaluation.rowType), ctx =>
   ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.evaluation, (m, r) => m.tenantId.eq(r.tenant))
 );
+
+function dropRecording(ctx: Ctx, key: string) {
+  for (const c of [...ctx.db.recordingChunk.recordingKey.filter(key)]) ctx.db.recordingChunk.id.delete(c.id);
+  for (const sg of [...ctx.db.segment.recordingKey.filter(key)]) ctx.db.segment.id.delete(sg.id);
+  ctx.db.recording.key.delete(key);
+}
+
+// ---------------------------------------------------------------------------------------------- app users
+// The phone server and the agent write these as services of the app's tenant. Times they already know (when someone
+// first texted, when a message went out) come in as unix milliseconds; 0 means now.
+
+const APP_ROLES = ['owner', 'admin', 'service'];
+const ZERO_TIME = new Timestamp(0n);
+
+function atMs(ctx: Ctx, ms: bigint) {
+  return ms > 0n ? new Timestamp(ms * 1000n) : ctx.timestamp;
+}
+
+// A person the server or agent mentions before the agent has synced them gets a bare row, so every message, invite
+// and session has someone to belong to.
+function ensureAppUser(ctx: Ctx, tenantId: string, handle: string, code: string) {
+  const h = handle.trim();
+  if (!h) return;
+  const c = code.trim().toUpperCase();
+  const u = ctx.db.appUser.handle.find(h);
+  if (u) {
+    if (u.tenant === tenantId && c && !u.code) ctx.db.appUser.handle.update({ ...u, code: c });
+    return;
+  }
+  ctx.db.appUser.insert({ handle: h, tenant: tenantId, code: c, name: '', optedOut: false, pendingLabel: '', pendingDelete: false, invites: 0, notes: [], consentVersion: '', consentedAt: ZERO_TIME, firstSeen: ctx.timestamp, lastSeen: ctx.timestamp });
+}
+
+export const upsertAppUser = spacetimedb.reducer(
+  { handle: t.string(), tenant: t.string(), code: t.string(), name: t.string(), optedOut: t.bool(), pendingLabel: t.string(), pendingDelete: t.bool(), invites: t.u32(), notes: t.array(t.string()), firstSeenMs: t.u64() },
+  (ctx, a) => {
+    requireRole(ctx, a.tenant, APP_ROLES);
+    const handle = a.handle.trim();
+    if (!handle) throw new SenderError('handle required');
+    const old = ctx.db.appUser.handle.find(handle);
+    if (old && old.tenant !== a.tenant) throw new SenderError(`${handle} belongs to ${old.tenant}`);
+    const first = atMs(ctx, a.firstSeenMs);
+    const row = {
+      handle, tenant: a.tenant, code: a.code.trim().toUpperCase(), name: a.name.trim().slice(0, 80), optedOut: a.optedOut,
+      pendingLabel: a.pendingLabel, pendingDelete: a.pendingDelete, invites: a.invites, notes: a.notes.slice(-200),
+      consentVersion: old?.consentVersion ?? '', consentedAt: old?.consentedAt ?? ZERO_TIME,
+      firstSeen: old && old.firstSeen.microsSinceUnixEpoch < first.microsSinceUnixEpoch ? old.firstSeen : first, lastSeen: ctx.timestamp,
+    };
+    if (old) ctx.db.appUser.handle.update(row);
+    else ctx.db.appUser.insert(row);
+  }
+);
+
+// One text. Sending the same key again updates it (a pending message that went out, or failed).
+export const upsertAppMessage = spacetimedb.reducer(
+  { key: t.string(), handle: t.string(), tenant: t.string(), direction: t.string(), kind: t.string(), text: t.string(), session: t.string(), status: t.string(), error: t.string(), atMs: t.u64() },
+  (ctx, a) => {
+    requireRole(ctx, a.tenant, APP_ROLES);
+    if (!a.key || a.key.length > 96) throw new SenderError('key is 1 to 96 characters');
+    if (a.direction !== 'in' && a.direction !== 'out') throw new SenderError('direction is in or out');
+    const old = ctx.db.appMessage.key.find(a.key);
+    if (old && old.tenant !== a.tenant) throw new SenderError(`message ${a.key} belongs to ${old.tenant}`);
+    ensureAppUser(ctx, a.tenant, a.handle, '');
+    const { atMs: ms, ...fields } = a;
+    const row = { ...fields, id: old?.id ?? 0n, text: a.text.slice(0, 8000), error: a.error.slice(0, 500), at: old?.at ?? atMs(ctx, ms) };
+    if (old) ctx.db.appMessage.id.update(row);
+    else ctx.db.appMessage.insert(row);
+  }
+);
+
+export const upsertAppInvite = spacetimedb.reducer(
+  { token: t.string(), tenant: t.string(), handle: t.string(), code: t.string(), link: t.string(), createdAtMs: t.u64() },
+  (ctx, a) => {
+    requireRole(ctx, a.tenant, APP_ROLES);
+    if (!a.token) throw new SenderError('token required');
+    const old = ctx.db.appInvite.token.find(a.token);
+    if (old && old.tenant !== a.tenant) throw new SenderError('invite belongs to another organisation');
+    ensureAppUser(ctx, a.tenant, a.handle, a.code);
+    const row = { token: a.token, tenant: a.tenant, handle: a.handle.trim(), code: a.code.trim().toUpperCase(), link: a.link, createdAt: old?.createdAt ?? atMs(ctx, a.createdAtMs) };
+    if (old) ctx.db.appInvite.token.update(row);
+    else ctx.db.appInvite.insert(row);
+  }
+);
+
+// A session as the phone server sees it. Consent with a version also stamps the person's consent.
+export const upsertAppSession = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), handle: t.string(), code: t.string(), token: t.string(), status: t.string(), consent: t.string(), meta: t.string(), summary: t.string(), labels: t.array(t.string()), error: t.string(), createdAtMs: t.u64() },
+  (ctx, a) => {
+    requireRole(ctx, a.tenant, APP_ROLES);
+    if (!a.id) throw new SenderError('id required');
+    const old = ctx.db.appSession.id.find(a.id);
+    if (old && old.tenant !== a.tenant) throw new SenderError(`session ${a.id} belongs to ${old.tenant}`);
+    ensureAppUser(ctx, a.tenant, a.handle, a.code);
+    const { createdAtMs, ...fields } = a;
+    const row = { ...fields, handle: a.handle.trim(), code: a.code.trim().toUpperCase(), labels: a.labels.slice(-50), error: a.error.slice(0, 2000), createdAt: old?.createdAt ?? atMs(ctx, createdAtMs), updatedAt: ctx.timestamp };
+    if (old) ctx.db.appSession.id.update(row);
+    else ctx.db.appSession.insert(row);
+    let version = '';
+    try { version = String(JSON.parse(a.consent || '{}').consent_version ?? ''); } catch { version = ''; }
+    const u = ctx.db.appUser.handle.find(row.handle);
+    if (version && u && u.tenant === a.tenant && u.consentVersion !== version) {
+      ctx.db.appUser.handle.update({ ...u, consentVersion: version, consentedAt: ctx.timestamp });
+    }
+  }
+);
+
+// "delete my data": the person, every message, invite and session, the raw phone recordings and their hikes, in one
+// transaction, so either all of it goes or none does.
+export const deleteAppUser = spacetimedb.reducer({ tenant: t.string(), handle: t.string() }, (ctx, { tenant: tenantId, handle }) => {
+  requireRole(ctx, tenantId, APP_ROLES);
+  const h = handle.trim();
+  const u = ctx.db.appUser.handle.find(h);
+  if (u && u.tenant !== tenantId) throw new SenderError(`${h} belongs to ${u.tenant}`);
+  const codes = new Set<string>(u?.code ? [u.code] : []);
+  for (const se of [...ctx.db.appSession.handle.filter(h)].filter(x => x.tenant === tenantId)) {
+    for (const kind of ['imu', 'gps', 'baro']) if (ctx.db.recording.key.find(`phone/${se.id}/${kind}`)) dropRecording(ctx, `phone/${se.id}/${kind}`);
+    const hk = ctx.db.hike.key.find(se.id);
+    if (hk && hk.joinCode) codes.add(hk.joinCode);
+    else if (hk) {
+      for (const c of [...ctx.db.hikeChunk.hikeKey.filter(hk.key)]) ctx.db.hikeChunk.id.delete(c.id);
+      const st = hikeTotals(ctx);
+      ctx.db.hikeStats.id.update({ ...st, hikes: st.hikes - 1n, meters: Math.max(0, st.meters - hk.distanceM), seconds: Math.max(0, st.seconds - (hk.endedS - hk.startedS)), motionSamples: st.motionSamples - BigInt(hk.motionSamples) });
+      ctx.db.hike.id.delete(hk.id);
+    }
+    if (se.code) codes.add(se.code);
+    ctx.db.appSession.id.delete(se.id);
+  }
+  for (const inv of [...ctx.db.appInvite.handle.filter(h)].filter(x => x.tenant === tenantId)) {
+    if (inv.code) codes.add(inv.code);
+    ctx.db.appInvite.token.delete(inv.token);
+  }
+  for (const m of [...ctx.db.appMessage.handle.filter(h)].filter(x => x.tenant === tenantId)) ctx.db.appMessage.id.delete(m.id);
+  for (const c of codes) dropHikes(ctx, c);
+  if (u) ctx.db.appUser.handle.delete(h);
+});
+
+// ---------------------------------------------------------------------------------------- platform and API
+
+function isPlatformAdmin(ctx: Ctx) {
+  const a = ctx.db.platformAdmin.id.find(0);
+  return !!a && a.admin.equals(ctx.sender);
+}
+
+export const addPlatformService = spacetimedb.reducer({ identity: t.identity(), name: t.string(), kind: t.string() }, (ctx, a) => {
+  if (!isPlatformAdmin(ctx)) throw new SenderError('platform admin only');
+  const row = { identity: a.identity, name: a.name.slice(0, 80), kind: a.kind, addedAt: ctx.timestamp };
+  if (ctx.db.platformService.identity.find(a.identity)) ctx.db.platformService.identity.update(row);
+  else ctx.db.platformService.insert(row);
+});
+
+export const removePlatformService = spacetimedb.reducer({ identity: t.identity() }, (ctx, { identity }) => {
+  if (!isPlatformAdmin(ctx)) throw new SenderError('platform admin only');
+  ctx.db.platformService.identity.delete(identity);
+});
+
+// Adds an identity (a server, the agent) to an organisation directly, without an invite code.
+export const addMemberIdentity = spacetimedb.reducer({ tenantId: t.string(), identity: t.identity(), role: t.string() }, (ctx, { tenantId, identity, role }) => {
+  const me = requireRole(ctx, tenantId, MANAGE);
+  if (!ROLES.includes(role)) throw new SenderError(`role must be one of ${ROLES.join(', ')}`);
+  if ((role === 'owner' || role === 'admin') && me.role !== 'owner') throw new SenderError('only an owner grants owner or admin');
+  addMember(ctx, tenantId, identity, role);
+});
+
+const HEX64 = /^[0-9a-f]{64}$/;
+
+// The key is made and shown on the caller's machine (tools/api_key.py); only its SHA-256 comes here.
+export const addApiKey = spacetimedb.reducer({ tenantId: t.string(), hash: t.string(), prefix: t.string(), label: t.string() }, (ctx, a) => {
+  requireRole(ctx, a.tenantId, MANAGE);
+  if (!HEX64.test(a.hash)) throw new SenderError('hash is the lowercase hex SHA-256 of the key');
+  if (ctx.db.apiKey.hash.find(a.hash)) throw new SenderError('that key is already registered');
+  ctx.db.apiKey.insert({ hash: a.hash, tenant: a.tenantId, prefix: a.prefix.slice(0, 12), label: a.label.slice(0, 80), createdBy: ctx.sender, createdAt: ctx.timestamp, lastUsedAt: ZERO_TIME, calls: 0n, revoked: false });
+});
+
+export const revokeApiKey = spacetimedb.reducer({ hash: t.string() }, (ctx, { hash }) => {
+  const k = ctx.db.apiKey.hash.find(hash);
+  if (!k) throw new SenderError('no such key');
+  requireRole(ctx, k.tenant, MANAGE);
+  ctx.db.apiKey.hash.update({ ...k, revoked: true });
+});
+
+const ApiCallIn = t.object('ApiCallIn', { keyHash: t.string(), policyId: t.string(), route: t.string(), status: t.u16(), ms: t.f32(), atMs: t.u64() });
+
+// The policy API sends its calls in batches. A call with a key counts for the key's organisation, one without for the
+// public tenant.
+export const logApiCalls = spacetimedb.reducer({ calls: t.array(ApiCallIn) }, (ctx, { calls }) => {
+  if (!ctx.db.platformService.identity.find(ctx.sender) && !isPlatformAdmin(ctx)) throw new SenderError('platform services only');
+  if (calls.length > 1000) throw new SenderError('at most 1000 calls per batch');
+  for (const c of calls) {
+    const at = atMs(ctx, c.atMs);
+    const k = c.keyHash ? ctx.db.apiKey.hash.find(c.keyHash) : null;
+    if (k) ctx.db.apiKey.hash.update({ ...k, calls: k.calls + 1n, lastUsedAt: k.lastUsedAt.microsSinceUnixEpoch > at.microsSinceUnixEpoch ? k.lastUsedAt : at });
+    ctx.db.apiCall.insert({ id: 0n, tenant: k?.tenant ?? HI, keyPrefix: k?.prefix ?? '', policyId: c.policyId.slice(0, 64), route: c.route.slice(0, 32), status: c.status, ms: c.ms, at });
+  }
+});
+
+// ------------------------------------------------------------------------------------ app and API views
+
+function appTenantIds(ctx: VCtx) {
+  return [...ctx.db.member.identity.filter(ctx.sender)].filter(m => APP_ROLES.includes(m.role)).map(m => m.tenantId);
+}
+
+export const myAppUserView = spacetimedb.view({ name: 'my_app_user', public: true }, t.array(appUser.rowType), ctx => {
+  return appTenantIds(ctx).flatMap(id => [...ctx.db.appUser.tenant.filter(id)]);
+});
+
+export const myAppMessageView = spacetimedb.view({ name: 'my_app_message', public: true }, t.array(appMessage.rowType), ctx => {
+  return appTenantIds(ctx).flatMap(id => [...ctx.db.appMessage.tenant.filter(id)]);
+});
+
+export const myAppInviteView = spacetimedb.view({ name: 'my_app_invite', public: true }, t.array(appInvite.rowType), ctx => {
+  return appTenantIds(ctx).flatMap(id => [...ctx.db.appInvite.tenant.filter(id)]);
+});
+
+export const myAppSessionView = spacetimedb.view({ name: 'my_app_session', public: true }, t.array(appSession.rowType), ctx => {
+  return appTenantIds(ctx).flatMap(id => [...ctx.db.appSession.tenant.filter(id)]);
+});
+
+// Owners and admins see their organisations' keys (hashes and prefixes only).
+export const myApiKeyView = spacetimedb.view({ name: 'my_api_key', public: true }, t.array(apiKey.rowType), ctx => {
+  return managed(ctx).flatMap(id => [...ctx.db.apiKey.tenant.filter(id)]);
+});
+
+export const myApiCallView = spacetimedb.view({ name: 'my_api_call', public: true }, t.array(apiCall.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.apiCall, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicApiCallView = spacetimedb.anonymousView({ name: 'public_api_call', public: true }, t.array(apiCall.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.apiCall, (tn, r) => tn.id.eq(r.tenant))
+);
+
+// The policy API checks keys through this: platform services see every key's hash, organisation and state.
+export const serviceApiKeyView = spacetimedb.view({ name: 'service_api_key', public: true }, t.array(apiKey.rowType), ctx => {
+  return ctx.db.platformService.identity.find(ctx.sender) ? [...ctx.db.apiKey.iter()] : [];
+});

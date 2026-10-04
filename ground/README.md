@@ -97,6 +97,8 @@ Hikes go into the team's SpacetimeDB module (`spacetime/spacetimedb/src/index.ts
 - `hike_stats`: running totals.
 - Reducers: `claim_hike_writer`, `record_hike`, `push_hike_chunk`, `label_hike`, `delete_hikes`. They refuse every identity except the phone server's.
 
+**The app's people.** With `--stdb`, the server also writes every person, invite, message, consent, session and raw phone stream to the private `ground-truth-app` organisation, and the agent writes people and messages. Both need their identity added as that organisation's service once; see [DATABASE.md](../DATABASE.md).
+
 **How hikes get there.**
 - `ground/server.py --stdb <url>` (or `STDB_HTTP=<url> ground/run.sh`) writes each registered hike over SpacetimeDB's HTTP API.
 - The code is in `ground/stdb.py`. The per-second rows come from `ground/motion.py`.

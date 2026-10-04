@@ -15,6 +15,8 @@ The module is `spacetime/spacetimedb/src/index.ts`. `tools/stdb_load.py` loads e
 | Recordings | `recording`, `recording_chunk`, `segment` | One shape for every stream: named channels with units, flat f32 frames. YouTube GoPro follow-cam joints (link only, never the video), GoPro telemetry at 100 Hz split into descents, the hike walking clips. |
 | Training | `reference_pose`, `training_set` | The World Cup reference poses the ski policy holds, and which terrains, poses, courses and clips each policy family trains on. The tile mosaics are `terrain` rows with layer `tiles`. |
 | Models | `policy`, `train_run`, `evaluation` | The policy registry (runtime and endpoint on Modal), training runs, and 409 evaluations: the 24-tile benchmark, course rides and hike stretches. |
+| App users | `app_user`, `app_message`, `app_invite`, `app_session` | The people using Ground Truth: phone number or email, join code, consent, opt-out, what the agent remembers, every text both ways, invite links, and each phone session. Their raw iPhone IMU, GPS and barometer streams are `recording` rows `phone/<session>/imu`, `/gps` and `/baro`. |
+| Model API | `api_key`, `api_call`, `platform_service` | API keys per organisation (only their SHA-256 is stored) and a log of every API call. |
 
 `capture`, `capture_chunk` and `capture_stats` are the first version of `recording`. They are kept exactly as they were so publishing never disconnects a client; nothing writes them.
 
@@ -28,6 +30,8 @@ Organisations (tenants) own every row outside the live game and phone tables. Ha
 - Roles: `owner` and `admin` manage members and invite codes; `member` and `service` read and write; `viewer` reads.
 - Joining: an owner or admin calls `create_invite`, the code shows up in their `my_invite` view, and whoever calls `redeem_invite` with it joins with that role.
 - Anyone can `create_tenant`; they become its owner.
+- The app's people belong to `ground-truth-app`, a private organisation. Only its owners, admins and services see them, through `my_app_user`, `my_app_message`, `my_app_invite` and `my_app_session`. Phone numbers never reach a public view.
+- `delete_app_user` is "delete my data": the person, their messages, invites, sessions, raw phone streams and hikes, in one transaction.
 
 ## Reading it
 
@@ -54,6 +58,19 @@ Rows come back as positional arrays next to their schema. Timestamps are `[micro
 - Reducer arguments over HTTP are camelCase at the top level and snake_case inside nested objects (`t_0_ms`, `turn_x`).
 - Requests are capped at 2 MiB, so big arrays go in chunks of about 40,000 floats.
 - Every writer reducer names the tenant and needs a member, service, admin or owner role there.
+
+## The app and the API
+
+- **Phone server** (`ground/server.py --stdb ...`): its files in `out/ground` stay its working copy. Every invite, message, consent, upload, registration and label also goes to SpacetimeDB, plus each finished session's raw streams. At startup it copies over everything it already has.
+- **Agent** (`ground/agent`): every person and every message goes to SpacetimeDB the same way. Its identity is kept in `out/ground/agent_stdb.json`.
+- **Joining as a service.** Both need their identity to be a service of `ground-truth-app`. Either set `GT_SERVICE_INVITE` to a code from `python tools/stdb_admin.py invite --role service`, or run `python tools/stdb_admin.py add-service <identity>` with the identity they print at startup. The phone server's identity on maincloud is already a service.
+- **Model API** (`policy_api/`, on Modal):
+  - Keys go in `Authorization: Bearer hi_...`, `Api-Key hi_...` (openpi_client's `api_key`) or `X-Api-Key`.
+  - Without a key, the public policies still work.
+  - A wrong or revoked key gets 401. A revoked key is refused within a minute.
+  - Every call is logged to `api_call`, counted for the key's organisation.
+  - Make a key with `python tools/stdb_admin.py key create --label "<who>"`; it is shown once. List or revoke with `key list` and `key revoke <prefix>`.
+  - The API's own identity is a platform service, and its token is the Modal secret `hi-stdb`.
 
 ## Publishing safely
 
