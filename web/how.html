@@ -39,12 +39,12 @@
 <div class="wrap">
   <header>
     <a class="logo" href="index.html">Hi.</a>
-    <nav class="nav"><a class="on" href="how.html">How it works</a><a href="index.html#use">Data collection</a><a href="phone.html">Ground Truth</a><a href="api.html">API</a></nav>
+    <nav class="nav"><a class="on" href="how.html">How it works</a><a href="index.html#use">Data collection</a><a href="index.html#models">Foundation models</a><a href="phone.html">App</a><a href="/game/">Game</a><a href="api.html">API</a></nav>
   </header>
 
   <section class="intro">
     <h1>How it works</h1>
-    <p class="lede">Five drawings: the robot's brain, the physics it practices in, how it learns from data, the database every piece runs through, and how it all connects to a real robot.</p>
+    <p class="lede">Six drawings: the robot's brain, the physics it practices in, how it learns from data, the database every piece runs through, how it all connects to a real robot, and how a hike on your phone becomes joint angles.</p>
   </section>
 
   <section class="part">
@@ -115,6 +115,17 @@
       </div>
     </div>
     <div class="sketch"><svg id="d-arch"></svg></div>
+  </section>
+
+  <section class="part" id="phone-to-joints">
+    <div class="part-head">
+      <span class="k">06 · Phone to joints</span>
+      <div>
+        <h2>How a text becomes joint angles</h2>
+        <p>Photon texts you on iMessage. Say yes and the Ground Truth app records motion at 100 Hz, GPS every second, the barometer and your steps until you leave. The phone server checks the track against the trail under it and writes it to SpacetimeDB in one standard shape. On the same trail, rebuilt from 1 m lidar, NVIDIA's SONIC walks a G1, and every frame comes out as the same 36 numbers: where the robot is, which way it faces, and 29 joint angles.</p>
+      </div>
+    </div>
+    <div class="sketch"><svg id="d-joints"></svg></div>
   </section>
 
   <a class="back" href="index.html#use">Try it yourself →</a>
@@ -441,6 +452,51 @@ sketch("d-arch", 1100, 600, D => {
   D.text(130, 500, "141 in → 31 out, every 20 ms", { size: 16 });
   D.text(130, 528, "no network in the control loop", { size: 15, color: MUTED });
   D.text(480, 580, "where it falls → what people record next → back to the top", { size: 16, color: EMPH, rot: -1 });
+});
+/* 06 · Phone to joints */
+sketch("d-joints", 1100, 700, D => {
+  // 1. ask, record, register
+  D.box(30, 60, 230, 110, { label: "Photon", sub: "iMessage: \"saw you're going\non a hike, opt in?\"  yes", size: 24, fill: GREEN, gap: 9 });
+  D.arrow(264, 115, 336, 115, { bend: 4, sw: 2.2, label: "link", ly: -14 });
+  D.box(340, 50, 330, 130, { sw: 1.8 });
+  D.phone(360, 70);
+  D.text(408, 92, "Ground Truth app", { size: 22 });
+  D.text(408, 120, "accel + gyro · 100 Hz", { size: 15 });
+  D.text(408, 142, "GPS · 1 Hz  ·  barometer  ·  steps", { size: 15 });
+  D.text(408, 164, "until you leave the trail", { size: 14, color: MUTED });
+  D.arrow(674, 115, 746, 115, { bend: -4, sw: 2.2, label: "upload", ly: -14 });
+  D.box(750, 50, 320, 130, { label: "phone server", sub: "drop GPS worse than 30 m\nmatch the OSM trail · climb · gaps\ntrim 200 m off each end", size: 22 });
+
+  // 2. one standard shape in SpacetimeDB
+  D.arrow(910, 184, 760, 266, { bend: -14, sw: 2.2, label: "reducers", lx: 40 });
+  const cx = 550, top = 270, w = 560, h = 150;
+  D.ellipse(cx, top, w, 46, { fill: YELLOW, fillStyle: "solid", sw: 2.2 });
+  D.line(cx - w / 2, top, cx - w / 2, top + h, { sw: 2.2 });
+  D.line(cx + w / 2, top, cx + w / 2, top + h, { sw: 2.2 });
+  D.path([[cx - w / 2, top + h], [cx - 120, top + h + 24], [cx + 120, top + h + 24], [cx + w / 2, top + h]], { sw: 2.2 });
+  D.text(cx, top + 8, "SpacetimeDB", { size: 26, anchor: "middle" });
+  D.text(cx - 250, top + 60, "hike_chunk · one row a second", { size: 18 });
+  D.text(cx - 250, top + 84, "lat lon alt · speed · slope · cadence · bounce · impact", { size: 14, color: MUTED });
+  D.text(cx - 250, top + 118, "capture · one shape for every stream", { size: 18 });
+  D.text(cx - 250, top + 142, "channels named once · flat f32 frames · a rate in Hz", { size: 14, color: MUTED });
+  D.note(880, 452, 200, 74, "phone, game and video\nall land the same way", { rot: 3, size: 16 });
+
+  // 3. the same trail in simulation, out come joints
+  D.box(30, 500, 260, 110, { label: "the trail", sub: "OSM route + USGS 1 m lidar\nas a MuJoCo course", size: 22, fill: GREEN, gap: 9 });
+  D.arrow(294, 555, 366, 555, { bend: 4, sw: 2.2 });
+  D.box(370, 490, 260, 130, { sw: 1.8 });
+  D.stick(410, 600, 0.9);
+  D.text(450, 528, "SONIC walks a G1", { size: 20 });
+  D.text(450, 554, "planner picks steps,", { size: 15 });
+  D.text(450, 576, "controller tracks them", { size: 15 });
+  D.text(450, 598, "careful on steep grades", { size: 14, color: MUTED });
+  D.arrow(634, 555, 706, 555, { bend: -4, sw: 2.2 });
+  D.box(710, 540, 360, 130, { label: "joint frames", sub: "36 numbers a frame, 25 Hz\nroot xyz · facing quaternion\n29 joints, MuJoCo order", size: 22, fill: KEY, fillStyle: "solid" });
+
+  // what is wired today and what is next
+  D.arrow(380, 436, 170, 496, { bend: 10, sw: 2, dash: [8, 7], label: "matched trail → course", lx: -40, ly: -6 });
+  D.arrow(720, 436, 520, 486, { bend: -10, sw: 2, dash: [8, 7], label: "your pace + slope → gait, speed", lx: 60, ly: -4 });
+  D.text(30, 680, "dashed: next. Today a course is built per park, and the walk speed is set by hand.", { size: 14, color: MUTED, rot: 0 });
 });
 </script>
 </body>
