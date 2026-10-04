@@ -17,6 +17,7 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var steps: Int?            // since the hike started, from the step counter
     @Published private(set) var cadence: Double?       // steps per minute, right now
     @Published private(set) var grade: Double?         // percent, over the last 30 m of trail
+    @Published private(set) var here: CLLocationCoordinate2D?  // latest GPS fix, for the map
 
     private let motion = CMMotionManager()
     private let altimeter = CMAltimeter()
@@ -131,7 +132,7 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
             report("No step counter on this device")
         }
 
-        steps = nil; cadence = nil; grade = nil; speed = -1; course = -1; gradeTrail = []
+        steps = nil; cadence = nil; grade = nil; speed = -1; course = -1; gradeTrail = []; here = nil
         running = true
         uiTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.refresh() }
         refresh()
@@ -191,6 +192,7 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
         }
         hacc = locs.last?.horizontalAccuracy ?? -1
         if let l = locs.last {
+            if l.horizontalAccuracy >= 0 { here = l.coordinate }
             speed = l.speed >= 0 ? l.speed : -1
             course = l.course >= 0 ? l.course : -1
         }
