@@ -248,7 +248,7 @@ export function createBrain({ store, server, llm, mountain = null, log = console
       const s = conn.db.datasetStats.id.find(0)
       const h = conn.db.hikeStats.id.find(0)
       const ski = s ? `${num(s.samples)} ski motion samples from ${num(s.skiers)} skiers over ${num(s.runs)} runs` : 'no ski runs yet'
-      const hikes = h && h.hikes > 0n ? `${num(h.hikes)} real hikes (${(h.meters / 1000).toFixed(1)} km, ${num(h.motionSamples)} motion samples) from ${num(h.hikers)} hikers` : 'no hikes yet'
+      const hikes = h && h.hikes > 0n ? `${num(h.hikes)} real hikes (${(h.meters / 1000).toFixed(1)} km, ${num(h.motionSamples)} motion readings) from ${num(h.hikers)} hikers` : 'no hikes yet'
       return [`Ground Truth holds ${ski}, and ${hikes}. Every run and every hike adds to it.`]
     }
     if (MAP.includes(c)) {

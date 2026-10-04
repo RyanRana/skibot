@@ -15,6 +15,12 @@ private enum Ink {
 
 private func serif(_ size: CGFloat) -> Font { .custom("Times New Roman", size: size) }
 
+#if DEBUG
+private let debugScrollToBottom = ProcessInfo.processInfo.arguments.contains("-GTScrollBottom")
+#else
+private let debugScrollToBottom = false
+#endif
+
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var recorder: Recorder
@@ -53,6 +59,8 @@ struct RootView: View {
                 .padding(.bottom, 40)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .defaultScrollAnchor(debugScrollToBottom ? .bottom : .top)  // screenshots of the lower half in the simulator
+            .overlay(alignment: .top) { Ink.bg.ignoresSafeArea(edges: .top).frame(height: 0) }  // nothing scrolls under the clock
         }
         .foregroundStyle(Ink.text)
         .font(.system(size: 16))
@@ -301,39 +309,70 @@ struct RecordingView: View {
             }
             Text(clock(now.timeIntervalSince1970 - started)).font(serif(84)).tracking(-1.5).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.5).padding(.top, 10).padding(.bottom, 28)
+            let m = recorder.motionNow
+            Kicker(text: "Sensors").padding(.bottom, 2)
             Ledger(stats: [
-                Stat(label: "Distance", value: String(format: "%.2f", (s?.distance ?? 0) / 1000), note: "kilometres"),
+                Stat(label: "Accelerometer", value: motion == 0 ? "—" : String(format: "%.2f", m.accRms),
+                     note: motion == 0 ? "no reading yet" : "m/s², last second", bad: motion == 0),
+                Stat(label: "Gyroscope", value: motion == 0 ? "—" : String(format: "%.0f", m.gyroDps),
+                     note: motion == 0 ? "no reading yet" : "°/s turning, last second", bad: motion == 0),
+                Stat(label: "Barometer", value: m.kpa.map { String(format: "%.1f", $0 * 10) } ?? "—",
+                     note: m.kpa == nil ? "no reading yet" : "hPa" + (m.relAlt.map { String(format: ", %+.1f m since start", $0) } ?? ""),
+                     bad: m.kpa == nil && motion > 0),
                 Stat(label: "GPS", value: recorder.hacc < 0 ? "—" : String(format: "± %.0f", recorder.hacc),
-                     note: recorder.hacc < 0 ? "searching" : "metres", bad: recorder.hacc > 30),
-                Stat(label: "Motion", value: motion.formatted(), note: "samples at 100 Hz", bad: motion == 0),
+                     note: recorder.hacc < 0 ? "searching" : "metres accuracy", bad: recorder.hacc > 30),
+            ])
+            Kicker(text: "Trail").padding(.top, 28).padding(.bottom, 2)
+            Ledger(stats: [
+                Stat(label: "Distance", value: String(format: "%.2f", (s?.distance ?? 0) / 1000), note: "km, GPS"),
+                Stat(label: "Pace", value: pace(recorder.speed), note: recorder.speed >= 0.3 ? "min per km" : "standing still"),
+                Stat(label: "Climb", value: s?.climb.map { String(format: "%.0f", $0) } ?? "—", note: "metres gained, barometer"),
+                Stat(label: "Slope", value: recorder.grade.map { String(format: "%+.0f%%", $0) } ?? "—",
+                     note: recorder.grade == nil ? "after 30 m" : "last 30 m"),
+                Stat(label: "Heading", value: compass(recorder.course),
+                     note: recorder.course < 0 ? "need to move" : String(format: "%.0f°, GPS", recorder.course)),
+            ])
+            Kicker(text: "Body").padding(.top, 28).padding(.bottom, 2)
+            Ledger(stats: [
+                Stat(label: "Steps", value: recorder.steps.map { $0.formatted() } ?? "—",
+                     note: recorder.steps == nil ? "no reading yet" : "step counter"),
+                Stat(label: "Cadence", value: recorder.cadence.map { String(format: "%.0f", $0) } ?? "—", note: "steps per minute"),
+                Stat(label: "Motion readings", value: motion.formatted(), note: "accel + gyro, 100 per second", bad: motion == 0),
                 Stat(label: "Gaps", value: "\(gaps.count)", note: gaps.isEmpty ? "none so far" : "\(Int(gapTime)) s missing",
                      bad: !gaps.isEmpty),
             ])
             ForEach(recorder.problems, id: \.self) { p in Problem(text: p).padding(.top, 10) }
             Lede(text: "Lock your phone and put it away. Recording keeps going. Don't swipe the app closed, that stops it.")
                 .padding(.vertical, 28)
-            HoldButton(title: "Hold to end hike") { Task { await model.end() } }
+            HoldButton(title: "Hold to end and send") { Task { await model.end() } }
+            HoldButton(title: "Hold to discard", fill: Ink.bad, border: Ink.line, label: Ink.mute) {
+                Task { await model.discardRecording() }
+            }
+            .padding(.top, 10)
         }
     }
 }
 
 struct HoldButton: View {
     let title: String
+    var fill: Color = Ink.text
+    var border: Color = Ink.text
+    var label: Color = Ink.text
     let action: () -> Void
     @State private var progress: CGFloat = 0
 
     var body: some View {
         GeometryReader { g in
-            let label = Text(title).font(.system(size: 16, weight: .medium)).frame(width: g.size.width, height: g.size.height)
+            let text = Text(title).font(.system(size: 16, weight: .medium)).frame(width: g.size.width, height: g.size.height)
             ZStack(alignment: .leading) {
-                label.foregroundStyle(Ink.text)
-                Rectangle().fill(Ink.text).frame(width: g.size.width * progress)
-                label.foregroundStyle(Ink.bg)  // white where the fill has reached
+                text.foregroundStyle(label)
+                Rectangle().fill(fill).frame(width: g.size.width * progress)
+                text.foregroundStyle(Ink.bg)  // white where the fill has reached
                     .mask(alignment: .leading) { Rectangle().frame(width: g.size.width * progress) }
             }
         }
         .frame(height: 52)
-        .overlay(Rectangle().stroke(Ink.text, lineWidth: 1))
+        .overlay(Rectangle().stroke(border, lineWidth: 1))
         .contentShape(Rectangle())
         .onLongPressGesture(minimumDuration: 1.5) {
             progress = 0
@@ -375,12 +414,25 @@ struct EndedView: View {
         VStack(alignment: .leading, spacing: 0) {
             Kicker(text: uploaded ? "Hike received" : "Uploading").padding(.bottom, 14)
             Title(text: uploaded ? "Thank you." : "Sending your hike.")
+            let secs = (s?.ended ?? 0) - (s?.started ?? 0)
+            let km = (s?.distance ?? 0) / 1000
+            let stepCount = s?.pedometer?["steps"]
+            Kicker(text: "Trail").padding(.bottom, 2)
             Ledger(stats: [
-                Stat(label: "Time", value: clock((s?.ended ?? 0) - (s?.started ?? 0))),
-                Stat(label: "Distance", value: String(format: "%.2f", (s?.distance ?? 0) / 1000), note: "kilometres"),
-                Stat(label: "Motion", value: (s?.counts["imu"] ?? 0).formatted(), note: "samples", bad: noMotion),
+                Stat(label: "Time", value: clock(secs)),
+                Stat(label: "Distance", value: String(format: "%.2f", km), note: "km, GPS"),
+                Stat(label: "Climb", value: s?.climb.map { String(format: "%.0f", $0) } ?? "—", note: "metres gained"),
+                Stat(label: "Avg pace", value: km > 0.05 ? pace(km * 1000 / secs) : "—", note: "min per km"),
+            ])
+            Kicker(text: "Body and signal").padding(.top, 28).padding(.bottom, 2)
+            Ledger(stats: [
+                Stat(label: "Steps", value: stepCount.map { Int($0).formatted() } ?? "—", note: "step counter"),
+                Stat(label: "Avg cadence", value: stepCount.map { String(format: "%.0f", $0 / max(secs / 60, 1)) } ?? "—",
+                     note: "steps per minute"),
+                Stat(label: "Motion readings", value: (s?.counts["imu"] ?? 0).formatted(), note: "accel + gyro, 100 per second",
+                     bad: noMotion),
                 Stat(label: "Gaps", value: noMotion ? "—" : "\(s?.gaps.count ?? 0)",
-                     note: noMotion ? "no motion data" : nil, bad: noMotion || !(s?.gaps.isEmpty ?? true)),
+                     note: noMotion ? "no motion data" : "holes in the recording", bad: noMotion || !(s?.gaps.isEmpty ?? true)),
             ])
             RuledList {
                 Row(label: "Upload", value: uploaded ? "Done" : mine.isEmpty ? "Waiting" :
@@ -415,6 +467,18 @@ struct EndedView: View {
         }
         .onAppear { if uploaded, let s { uploader.poll(s) } }
     }
+}
+
+/// Minutes per kilometre from a speed in m/s; "—" when standing still or unknown.
+private func pace(_ mps: Double) -> String {
+    guard mps >= 0.3, mps.isFinite else { return "—" }
+    let s = Int((1000 / mps).rounded())
+    return s >= 3600 ? "—" : String(format: "%d:%02d", s / 60, s % 60)
+}
+
+private func compass(_ deg: Double) -> String {
+    guard deg >= 0 else { return "—" }
+    return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Int((deg + 22.5) / 45) % 8]
 }
 
 private func clock(_ secs: Double) -> String {

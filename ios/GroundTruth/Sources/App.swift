@@ -69,7 +69,7 @@ final class AppModel: ObservableObject {
         try? await Task.sleep(for: .seconds(3))
         start()
         try? await Task.sleep(for: .seconds(secs))
-        await end()
+        if args.contains("-GTDiscardRecording") { await discardRecording() } else { await end() }  // the two hold buttons
     }
     #endif
 
@@ -183,6 +183,12 @@ final class AppModel: ObservableObject {
             break
         }
         error = nil
+    /// "Hold to discard" while recording: stops the sensors and deletes everything recorded, nothing is sent.
+    func discardRecording() async {
+        busy = true
+        defer { busy = false }
+        _ = await recorder.stop()
+        discard()
     }
 
     /// Gives up on a hike that can't finish uploading (the server was reset, or no longer knows it): deletes the

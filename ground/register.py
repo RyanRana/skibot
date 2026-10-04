@@ -214,7 +214,7 @@ def message(s: dict) -> str:
         m = int(s["duration_s"] // 60)
         parts.append(f"{m // 60}h{m % 60:02d}m" if m >= 60 else f"{m} min" if m else f"{s['duration_s']:.0f} s")
     line1 = "Ground Truth: " + ", ".join(parts) if parts else "Ground Truth: hike received"
-    line2 = f"{s['imu']['samples']:,} motion samples at {s['imu']['rate_hz']:.0f} Hz"
+    line2 = f"{s['imu']['samples']:,} motion readings at {s['imu']['rate_hz']:.0f} Hz"
     g = s["gaps"]
     line3 = "no gaps" if g["count"] == 0 else f"{g['count']} gap{'s' if g['count'] > 1 else ''} ({g['total_s']:.0f} s total)"
     out = f"{line1}\n{line2}, {line3}.\nThank you, this hike is now robot training data."

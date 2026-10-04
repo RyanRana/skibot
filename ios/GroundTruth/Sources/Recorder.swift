@@ -10,6 +10,13 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var hacc: Double = -1
     @Published private(set) var problems: [String] = []
     @Published var error: String?
+    // Live values for the recording screen.
+    @Published private(set) var motionNow = SessionWriter.Live()
+    @Published private(set) var speed: Double = -1     // m/s from GPS, -1 when unknown
+    @Published private(set) var course: Double = -1    // degrees from north, -1 when unknown
+    @Published private(set) var steps: Int?            // since the hike started, from the step counter
+    @Published private(set) var cadence: Double?       // steps per minute, right now
+    @Published private(set) var grade: Double?         // percent, over the last 30 m of trail
 
     private let motion = CMMotionManager()
     private let altimeter = CMAltimeter()
@@ -20,6 +27,7 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var lastGoodFix: CLLocation?
     private var uiTimer: Timer?
     private var onAuthorized: (() -> Void)?
+    private var gradeTrail: [(dist: Double, alt: Double)] = []
 
     static let deniedLocation = "Location is off for ground truth. Turn it on in Settings > Privacy & Security > Location Services > ground truth > While Using the App."
 
@@ -111,6 +119,19 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
             }
         }
 
+        if CMPedometer.isStepCountingAvailable(), let st = s.started {
+            pedometer.startUpdates(from: Date(timeIntervalSince1970: st)) { [weak self] d, _ in
+                guard let d else { return }
+                DispatchQueue.main.async {
+                    self?.steps = d.numberOfSteps.intValue
+                    self?.cadence = d.currentCadence.map { $0.doubleValue * 60 }
+                }
+            }
+        } else {
+            report("No step counter on this device")
+        }
+
+        steps = nil; cadence = nil; grade = nil; speed = -1; course = -1; gradeTrail = []
         running = true
         uiTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.refresh() }
         refresh()
@@ -123,6 +144,7 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
         altimeter.stopAbsoluteAltitudeUpdates()
         location.stopUpdatingLocation()
         location.allowsBackgroundLocationUpdates = false
+        pedometer.stopUpdates()
         uiTimer?.invalidate()
         uiTimer = nil
         guard let w = writer else { return nil }
@@ -168,6 +190,10 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
             }
         }
         hacc = locs.last?.horizontalAccuracy ?? -1
+        if let l = locs.last {
+            speed = l.speed >= 0 ? l.speed : -1
+            course = l.course >= 0 ? l.course : -1
+        }
     }
 
     func locationManager(_ m: CLLocationManager, didFailWithError e: Error) {
@@ -183,7 +209,17 @@ final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     private func refresh() {
         guard let w = writer else { return }
-        live = w.snapshot()
+        let (state, now) = w.liveSnapshot()
+        live = state
+        motionNow = now
+        // Slope: altitude change over the last 30 m of distance, both measured, so no map is needed.
+        if let alt = now.relAlt {
+            if gradeTrail.isEmpty || state.distance - gradeTrail.last!.dist >= 2 { gradeTrail.append((state.distance, alt)) }
+            gradeTrail = Array(gradeTrail.suffix(200))
+            if let old = gradeTrail.last(where: { state.distance - $0.dist >= 30 }) {
+                grade = (alt - old.alt) / (state.distance - old.dist) * 100
+            }
+        }
         if let e = w.lastError { report(e) }
     }
 }
