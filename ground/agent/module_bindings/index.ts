@@ -35,6 +35,7 @@ import {
 
 // Import all reducer arg schemas
 import ClaimHikeWriterReducer from "./claim_hike_writer_reducer";
+import CloseCaptureReducer from "./close_capture_reducer";
 import CreateChallengeReducer from "./create_challenge_reducer";
 import DeleteHikesReducer from "./delete_hikes_reducer";
 import FinishRunReducer from "./finish_run_reducer";
@@ -42,6 +43,8 @@ import JoinReducer from "./join_reducer";
 import LabelHikeReducer from "./label_hike_reducer";
 import LinkCodeReducer from "./link_code_reducer";
 import MarkSentReducer from "./mark_sent_reducer";
+import OpenCaptureReducer from "./open_capture_reducer";
+import PushCaptureChunkReducer from "./push_capture_chunk_reducer";
 import PushHikeChunkReducer from "./push_hike_chunk_reducer";
 import PushPhotoReducer from "./push_photo_reducer";
 import PushTraceReducer from "./push_trace_reducer";
@@ -53,6 +56,9 @@ import StartRunReducer from "./start_run_reducer";
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import CaptureRow from "./capture_table";
+import CaptureChunkRow from "./capture_chunk_table";
+import CaptureStatsRow from "./capture_stats_table";
 import ChallengeRow from "./challenge_table";
 import CheerRow from "./cheer_table";
 import DatasetStatsRow from "./dataset_stats_table";
@@ -71,6 +77,55 @@ import TraceChunkRow from "./trace_chunk_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  capture: __table({
+    name: 'capture',
+    indexes: [
+      { accessor: 'activity', name: 'capture_activity_idx_btree', algorithm: 'btree', columns: [
+        'activity',
+      ] },
+      { accessor: 'id', name: 'capture_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'joinCode', name: 'capture_join_code_idx_btree', algorithm: 'btree', columns: [
+        'joinCode',
+      ] },
+      { accessor: 'key', name: 'capture_key_idx_btree', algorithm: 'btree', columns: [
+        'key',
+      ] },
+      { accessor: 'source', name: 'capture_source_idx_btree', algorithm: 'btree', columns: [
+        'source',
+      ] },
+    ],
+    constraints: [
+      { name: 'capture_id_key', constraint: 'unique', columns: ['id'] },
+      { name: 'capture_key_key', constraint: 'unique', columns: ['key'] },
+    ],
+  }, CaptureRow),
+  captureChunk: __table({
+    name: 'capture_chunk',
+    indexes: [
+      { accessor: 'captureKey', name: 'capture_chunk_capture_key_idx_btree', algorithm: 'btree', columns: [
+        'captureKey',
+      ] },
+      { accessor: 'id', name: 'capture_chunk_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'capture_chunk_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, CaptureChunkRow),
+  captureStats: __table({
+    name: 'capture_stats',
+    indexes: [
+      { accessor: 'key', name: 'capture_stats_key_idx_btree', algorithm: 'btree', columns: [
+        'key',
+      ] },
+    ],
+    constraints: [
+      { name: 'capture_stats_key_key', constraint: 'unique', columns: ['key'] },
+    ],
+  }, CaptureStatsRow),
   challenge: __table({
     name: 'challenge',
     indexes: [
@@ -248,6 +303,7 @@ const tablesSchema = __schema({
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("claim_hike_writer", ClaimHikeWriterReducer),
+  __reducerSchema("close_capture", CloseCaptureReducer),
   __reducerSchema("create_challenge", CreateChallengeReducer),
   __reducerSchema("delete_hikes", DeleteHikesReducer),
   __reducerSchema("finish_run", FinishRunReducer),
@@ -255,6 +311,8 @@ const reducersSchema = __reducers(
   __reducerSchema("label_hike", LabelHikeReducer),
   __reducerSchema("link_code", LinkCodeReducer),
   __reducerSchema("mark_sent", MarkSentReducer),
+  __reducerSchema("open_capture", OpenCaptureReducer),
+  __reducerSchema("push_capture_chunk", PushCaptureChunkReducer),
   __reducerSchema("push_hike_chunk", PushHikeChunkReducer),
   __reducerSchema("push_photo", PushPhotoReducer),
   __reducerSchema("push_trace", PushTraceReducer),

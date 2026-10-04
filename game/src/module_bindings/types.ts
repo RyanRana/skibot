@@ -10,6 +10,44 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Capture = __t.object("Capture", {
+  id: __t.u64(),
+  key: __t.string(),
+  owner: __t.identity(),
+  source: __t.string(),
+  activity: __t.string(),
+  joinCode: __t.string(),
+  ref: __t.string(),
+  uri: __t.string(),
+  channels: __t.array(__t.string()),
+  rateHz: __t.f32(),
+  meta: __t.string(),
+  frames: __t.u64(),
+  chunks: __t.u32(),
+  closed: __t.bool(),
+  startedAt: __t.timestamp(),
+  endedAt: __t.timestamp(),
+});
+export type Capture = __Infer<typeof Capture>;
+
+export const CaptureChunk = __t.object("CaptureChunk", {
+  id: __t.u64(),
+  captureKey: __t.string(),
+  seq: __t.u32(),
+  t0Ms: __t.u64(),
+  tMs: __t.array(__t.u32()),
+  data: __t.array(__t.f32()),
+});
+export type CaptureChunk = __Infer<typeof CaptureChunk>;
+
+export const CaptureStats = __t.object("CaptureStats", {
+  key: __t.string(),
+  captures: __t.u64(),
+  frames: __t.u64(),
+  values: __t.u64(),
+});
+export type CaptureStats = __Infer<typeof CaptureStats>;
+
 export const Challenge = __t.object("Challenge", {
   id: __t.u64(),
   fromName: __t.string(),
@@ -45,6 +83,67 @@ export const Feed = __t.object("Feed", {
   at: __t.timestamp(),
 });
 export type Feed = __Infer<typeof Feed>;
+
+export const Hike = __t.object("Hike", {
+  id: __t.u64(),
+  key: __t.string(),
+  joinCode: __t.string(),
+  placement: __t.string(),
+  startedS: __t.f64(),
+  endedS: __t.f64(),
+  distanceM: __t.f32(),
+  climbM: __t.f32(),
+  trail: __t.string(),
+  sacScale: __t.string(),
+  surface: __t.string(),
+  motionSamples: __t.u32(),
+  rateHz: __t.f32(),
+  gaps: __t.u32(),
+  gapS: __t.f32(),
+  cadenceSpm: __t.f32(),
+  notes: __t.array(__t.string()),
+  at: __t.timestamp(),
+});
+export type Hike = __Infer<typeof Hike>;
+
+export const HikeChunk = __t.object("HikeChunk", {
+  id: __t.u64(),
+  hikeKey: __t.string(),
+  seq: __t.u32(),
+  get samples() {
+    return __t.array(HikeSample);
+  },
+});
+export type HikeChunk = __Infer<typeof HikeChunk>;
+
+export const HikeSample = __t.object("HikeSample", {
+  tS: __t.u32(),
+  lat: __t.f64(),
+  lon: __t.f64(),
+  altM: __t.f32(),
+  speed: __t.f32(),
+  slopeDeg: __t.f32(),
+  cadence: __t.f32(),
+  bounce: __t.f32(),
+  impact: __t.f32(),
+});
+export type HikeSample = __Infer<typeof HikeSample>;
+
+export const HikeStats = __t.object("HikeStats", {
+  id: __t.u8(),
+  hikes: __t.u64(),
+  meters: __t.f64(),
+  seconds: __t.f64(),
+  motionSamples: __t.u64(),
+  hikers: __t.u32(),
+});
+export type HikeStats = __Infer<typeof HikeStats>;
+
+export const HikeWriter = __t.object("HikeWriter", {
+  id: __t.u8(),
+  writer: __t.identity(),
+});
+export type HikeWriter = __Infer<typeof HikeWriter>;
 
 export const Outbox = __t.object("Outbox", {
   id: __t.u64(),

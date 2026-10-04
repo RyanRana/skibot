@@ -7,6 +7,7 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
 import ClaimHikeWriterReducer from "../claim_hike_writer_reducer";
+import CloseCaptureReducer from "../close_capture_reducer";
 import CreateChallengeReducer from "../create_challenge_reducer";
 import DeleteHikesReducer from "../delete_hikes_reducer";
 import FinishRunReducer from "../finish_run_reducer";
@@ -14,6 +15,8 @@ import JoinReducer from "../join_reducer";
 import LabelHikeReducer from "../label_hike_reducer";
 import LinkCodeReducer from "../link_code_reducer";
 import MarkSentReducer from "../mark_sent_reducer";
+import OpenCaptureReducer from "../open_capture_reducer";
+import PushCaptureChunkReducer from "../push_capture_chunk_reducer";
 import PushHikeChunkReducer from "../push_hike_chunk_reducer";
 import PushPhotoReducer from "../push_photo_reducer";
 import PushTraceReducer from "../push_trace_reducer";
@@ -23,6 +26,7 @@ import SetStateReducer from "../set_state_reducer";
 import StartRunReducer from "../start_run_reducer";
 
 export type ClaimHikeWriterParams = __Infer<typeof ClaimHikeWriterReducer>;
+export type CloseCaptureParams = __Infer<typeof CloseCaptureReducer>;
 export type CreateChallengeParams = __Infer<typeof CreateChallengeReducer>;
 export type DeleteHikesParams = __Infer<typeof DeleteHikesReducer>;
 export type FinishRunParams = __Infer<typeof FinishRunReducer>;
@@ -30,6 +34,8 @@ export type JoinParams = __Infer<typeof JoinReducer>;
 export type LabelHikeParams = __Infer<typeof LabelHikeReducer>;
 export type LinkCodeParams = __Infer<typeof LinkCodeReducer>;
 export type MarkSentParams = __Infer<typeof MarkSentReducer>;
+export type OpenCaptureParams = __Infer<typeof OpenCaptureReducer>;
+export type PushCaptureChunkParams = __Infer<typeof PushCaptureChunkReducer>;
 export type PushHikeChunkParams = __Infer<typeof PushHikeChunkReducer>;
 export type PushPhotoParams = __Infer<typeof PushPhotoReducer>;
 export type PushTraceParams = __Infer<typeof PushTraceReducer>;

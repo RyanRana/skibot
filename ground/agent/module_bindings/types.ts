@@ -10,6 +10,44 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Capture = __t.object("Capture", {
+  id: __t.u64(),
+  key: __t.string(),
+  owner: __t.identity(),
+  source: __t.string(),
+  activity: __t.string(),
+  joinCode: __t.string(),
+  ref: __t.string(),
+  uri: __t.string(),
+  channels: __t.array(__t.string()),
+  rateHz: __t.f32(),
+  meta: __t.string(),
+  frames: __t.u64(),
+  chunks: __t.u32(),
+  closed: __t.bool(),
+  startedAt: __t.timestamp(),
+  endedAt: __t.timestamp(),
+});
+export type Capture = __Infer<typeof Capture>;
+
+export const CaptureChunk = __t.object("CaptureChunk", {
+  id: __t.u64(),
+  captureKey: __t.string(),
+  seq: __t.u32(),
+  t0Ms: __t.u64(),
+  tMs: __t.array(__t.u32()),
+  data: __t.array(__t.f32()),
+});
+export type CaptureChunk = __Infer<typeof CaptureChunk>;
+
+export const CaptureStats = __t.object("CaptureStats", {
+  key: __t.string(),
+  captures: __t.u64(),
+  frames: __t.u64(),
+  values: __t.u64(),
+});
+export type CaptureStats = __Infer<typeof CaptureStats>;
+
 export const Challenge = __t.object("Challenge", {
   id: __t.u64(),
   fromName: __t.string(),
