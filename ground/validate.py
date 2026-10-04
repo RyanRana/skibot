@@ -23,8 +23,8 @@ import json
 from pathlib import Path
 
 import numpy as np
-from scipy.signal import butter, filtfilt, find_peaks
 
+from ground.motion import step_peaks, up_axis
 from ground.register import GAP_S, climb
 from ground.schema import load_session
 
@@ -45,11 +45,6 @@ def resolve(root: Path, ref: str) -> Path:
     if len(hits) != 1:
         raise SystemExit(f"{ref!r} matches {len(hits)} sessions; use more of the id (python -m ground.validate list)")
     return hits[0]
-
-
-def up_axis(imu: np.ndarray) -> np.ndarray:
-    g = imu["grav"].astype(np.float64)
-    return g / np.maximum(np.linalg.norm(g, axis=1, keepdims=True), 1e-9)
 
 
 def yaw_deg(imu: np.ndarray) -> np.ndarray:
@@ -108,19 +103,6 @@ def test_rest(d: Path, args) -> tuple[list[dict], dict]:
     if acc.std(0).max() > 0.5:
         m["note"] = "the phone was moving: put it flat on a table and don't touch it during the test"
     return checks, m
-
-
-def step_peaks(imu: np.ndarray, rate: float) -> np.ndarray:
-    """Steps from vertical acceleration (user acceleration on the gravity axis): low-passed at 3 Hz, one peak per step."""
-    a = (imu["acc"].astype(np.float64) * up_axis(imu)).sum(1)
-    b, aa = butter(2, 3.0 / (rate / 2))
-    v = filtfilt(b, aa, a)
-    moving = np.abs(v) > 0.05
-    if moving.sum() < rate:
-        return np.zeros(0, dtype=int)
-    peaks, _ = find_peaks(-v if np.abs(v.min()) > v.max() else v, distance=int(0.3 * rate),
-                          prominence=0.6 * v[moving].std())
-    return peaks
 
 
 def test_steps(d: Path, args) -> tuple[list[dict], dict]:

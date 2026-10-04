@@ -168,7 +168,81 @@ const tickTimer = table(
   }
 );
 
-const spacetimedb = schema({ player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, tickTimer });
+// ---------------------------------------------------------------------------------------------- hikes
+// Real hikes recorded by the ground truth iPhone app (ground/ in this repo). The phone server registers each
+// hike against the terrain and writes it here; the iMessage agent texts the summary from the outbox.
+
+// One second of a hike: where the hiker was, how fast, the slope under them, and how their body moved
+// (steps per minute, vertical bounce, hardest step impact). Only the route past the first and last 200 m is
+// stored, so no one's home shows up.
+const HikeSample = t.object('HikeSample', {
+  tS: t.u32(), // seconds since the hike started
+  lat: t.f64(),
+  lon: t.f64(),
+  altM: t.f32(),
+  speed: t.f32(),
+  slopeDeg: t.f32(),
+  cadence: t.f32(),
+  bounce: t.f32(),
+  impact: t.f32(),
+});
+
+const hike = table(
+  { name: 'hike', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    key: t.string().unique(), // session id from the phone server
+    joinCode: t.string().index('btree'),
+    placement: t.string(), // pocket, hand, backpack, hip belt
+    startedS: t.f64(),
+    endedS: t.f64(),
+    distanceM: t.f32(),
+    climbM: t.f32(),
+    trail: t.string(),
+    sacScale: t.string(),
+    surface: t.string(),
+    motionSamples: t.u32(), // raw 100 Hz samples on the phone server; the rows here are per second
+    rateHz: t.f32(),
+    gaps: t.u32(),
+    gapS: t.f32(),
+    cadenceSpm: t.f32(),
+    notes: t.array(t.string()), // what the hiker told the agent about the trail
+    at: t.timestamp(),
+  }
+);
+
+const hikeChunk = table(
+  { name: 'hike_chunk', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    hikeKey: t.string().index('btree'),
+    seq: t.u32(),
+    samples: t.array(HikeSample),
+  }
+);
+
+const hikeStats = table(
+  { name: 'hike_stats', public: true },
+  {
+    id: t.u8().primaryKey(),
+    hikes: t.u64(),
+    meters: t.f64(),
+    seconds: t.f64(),
+    motionSamples: t.u64(),
+    hikers: t.u32(),
+  }
+);
+
+// The one identity allowed to write hikes: the phone server, which claims it once with claim_hike_writer.
+const hikeWriter = table(
+  { name: 'hike_writer' },
+  {
+    id: t.u8().primaryKey(),
+    writer: t.identity(),
+  }
+);
+
+const spacetimedb = schema({ player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, tickTimer, hike, hikeChunk, hikeStats, hikeWriter });
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
@@ -365,5 +439,95 @@ export const tick = spacetimedb.reducer({ onSchedule: tickTimer }, { timer: tick
       const p = ctx.db.player.identity.find(s.identity);
       if (p && p.online) ctx.db.player.identity.update({ ...p, online: false });
     }
+  }
+});
+
+// ---------------------------------------------------------------------------------------------- hikes
+
+function hikeTotals(ctx: Ctx) {
+  return ctx.db.hikeStats.id.find(0) ?? ctx.db.hikeStats.insert({ id: 0, hikes: 0n, meters: 0, seconds: 0, motionSamples: 0n, hikers: 0 });
+}
+
+function requireHikeWriter(ctx: Ctx) {
+  const w = ctx.db.hikeWriter.id.find(0);
+  if (!w || !w.writer.equals(ctx.sender)) throw new SenderError('only the phone server writes hikes');
+}
+
+// The phone server calls this once at startup. The first caller becomes the hike writer; anyone else is refused.
+export const claimHikeWriter = spacetimedb.reducer({}, ctx => {
+  const w = ctx.db.hikeWriter.id.find(0);
+  if (!w) ctx.db.hikeWriter.insert({ id: 0, writer: ctx.sender });
+  else if (!w.writer.equals(ctx.sender)) throw new SenderError('hike writer already claimed by another identity');
+});
+
+// A registered hike. Recording it again (the server re-registers after a fix) updates the row and does not
+// count it twice; only the first time queues the summary text and posts to the feed.
+export const recordHike = spacetimedb.reducer(
+  {
+    key: t.string(), joinCode: t.string(), placement: t.string(), startedS: t.f64(), endedS: t.f64(),
+    distanceM: t.f32(), climbM: t.f32(), trail: t.string(), sacScale: t.string(), surface: t.string(),
+    motionSamples: t.u32(), rateHz: t.f32(), gaps: t.u32(), gapS: t.f32(), cadenceSpm: t.f32(), message: t.string(),
+  },
+  (ctx, a) => {
+    requireHikeWriter(ctx);
+    const { message, ...fields } = a;
+    const code = fields.joinCode.trim().toUpperCase();
+    const existing = ctx.db.hike.key.find(fields.key);
+    if (existing) {
+      ctx.db.hike.id.update({ ...existing, ...fields, joinCode: code, at: ctx.timestamp });
+      return;
+    }
+    const newHiker = !!code && [...ctx.db.hike.joinCode.filter(code)].length === 0;
+    ctx.db.hike.insert({ id: 0n, ...fields, joinCode: code, notes: [], at: ctx.timestamp });
+    const s = hikeTotals(ctx);
+    ctx.db.hikeStats.id.update({
+      ...s, hikes: s.hikes + 1n, meters: s.meters + fields.distanceM, seconds: s.seconds + (fields.endedS - fields.startedS),
+      motionSamples: s.motionSamples + BigInt(fields.motionSamples), hikers: s.hikers + (newHiker ? 1 : 0),
+    });
+    const where = fields.trail ? ` on ${fields.trail}` : '';
+    post(ctx, 'hike', `a hiker added ${(fields.distanceM / 1000).toFixed(1)} km${where} to Ground Truth`);
+    if (message) text(ctx, code, 'hike', message, fields.key);
+  }
+);
+
+// Per-second features of a hike, about a minute per chunk. Sending the same seq again replaces it.
+export const pushHikeChunk = spacetimedb.reducer(
+  { hikeKey: t.string(), seq: t.u32(), samples: t.array(HikeSample) },
+  (ctx, { hikeKey, seq, samples }) => {
+    requireHikeWriter(ctx);
+    if (!ctx.db.hike.key.find(hikeKey)) throw new SenderError('record the hike first');
+    if (samples.length === 0 || samples.length > 600) throw new SenderError('1 to 600 samples per chunk');
+    for (const c of ctx.db.hikeChunk.hikeKey.filter(hikeKey)) if (c.seq === seq) ctx.db.hikeChunk.id.delete(c.id);
+    ctx.db.hikeChunk.insert({ id: 0n, hikeKey, seq, samples });
+  }
+);
+
+// Something the hiker told the agent about the trail ("slipped on wet roots near the creek").
+export const labelHike = spacetimedb.reducer({ key: t.string(), note: t.string() }, (ctx, { key, note }) => {
+  requireHikeWriter(ctx);
+  const h = ctx.db.hike.key.find(key);
+  if (!h) throw new SenderError('no such hike');
+  const clean = note.trim().slice(0, 500);
+  if (clean) ctx.db.hike.id.update({ ...h, notes: [...h.notes, clean].slice(-20) });
+});
+
+// "delete my data": every hike, chunk and hike text tied to a join code.
+export const deleteHikes = spacetimedb.reducer({ joinCode: t.string() }, (ctx, { joinCode }) => {
+  requireHikeWriter(ctx);
+  const code = joinCode.trim().toUpperCase();
+  if (!code) return;
+  const s = hikeTotals(ctx);
+  let hikes = 0n, meters = 0, seconds = 0, samples = 0n;
+  for (const h of [...ctx.db.hike.joinCode.filter(code)]) {
+    for (const c of [...ctx.db.hikeChunk.hikeKey.filter(h.key)]) ctx.db.hikeChunk.id.delete(c.id);
+    hikes += 1n; meters += h.distanceM; seconds += h.endedS - h.startedS; samples += BigInt(h.motionSamples);
+    ctx.db.hike.id.delete(h.id);
+  }
+  for (const m of [...ctx.db.outbox.iter()]) if (m.joinCode === code && m.kind === 'hike') ctx.db.outbox.id.delete(m.id);
+  if (hikes > 0n) {
+    ctx.db.hikeStats.id.update({
+      ...s, hikes: s.hikes - hikes, meters: Math.max(0, s.meters - meters), seconds: Math.max(0, s.seconds - seconds),
+      motionSamples: s.motionSamples - samples, hikers: Math.max(0, s.hikers - 1),
+    });
   }
 });

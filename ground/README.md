@@ -86,3 +86,50 @@ It runs on Photon Spectrum (`spectrum-ts`). On the free and Pro plans, people te
   - `brain.mjs` holds the conversation and the Grok tools.
   - `agent.mjs` is the Spectrum transport and the outbox sender.
   - `server.mjs` calls `ground/server.py`.
+
+## SpacetimeDB (the team database)
+
+Hikes go into the team's SpacetimeDB module (`spacetime/spacetimedb/src/index.ts`), the same database as the ski game.
+
+**What the module stores for hikes.** These tables and reducers are additive only: no ski table changed, so publishing keeps existing data.
+- `hike`: one row per hike. It holds the join code, never a phone number.
+- `hike_chunk`: per-second features, minus the first and last 200 m.
+- `hike_stats`: running totals.
+- Reducers: `claim_hike_writer`, `record_hike`, `push_hike_chunk`, `label_hike`, `delete_hikes`. They refuse every identity except the phone server's.
+
+**How hikes get there.**
+- `ground/server.py --stdb <url>` (or `STDB_HTTP=<url> ground/run.sh`) writes each registered hike over SpacetimeDB's HTTP API.
+- The code is in `ground/stdb.py`. The per-second rows come from `ground/motion.py`.
+- The server's identity is saved in `out/ground/stdb_identity.json`.
+- The summary text goes into the module's `outbox`, keyed by join code.
+
+**Who texts.** `ground/agent` is the one iMessage agent. It replaced `agent/`, which nothing starts anymore.
+- It connects with `STDB_URI` and sends every outbox row: ski joins, results with the finish photo, challenges, hike summaries.
+- It answers SKI, TOP, STATS, MAP, CHALLENGE and ME, plus the hike flow.
+- Each person gets one join code. It's stored only in `out/ground/agent_state.json`, next to their phone number.
+
+Local:
+
+```
+spacetime start                                              # SpacetimeDB on :3000
+cd spacetime && spacetime publish ground-truth --server local --yes
+STDB_HTTP=http://127.0.0.1:3000 ground/run.sh                # phone server, writes hikes
+cd ground/agent && npm start                                 # STDB_URI=ws://127.0.0.1:3000 in .env
+```
+
+Demo (hosted). This needs a browser login once:
+
+```
+spacetime login
+cd spacetime && spacetime publish ground-truth --server maincloud --yes
+STDB_HTTP=https://maincloud.spacetimedb.com ground/run.sh
+# ground/agent/.env: STDB_URI=wss://maincloud.spacetimedb.com, then restart the agent
+```
+
+After changing the module, regenerate the agent's bindings:
+
+```
+spacetime generate --lang typescript --out-dir ground/agent/module_bindings --module-path spacetime/spacetimedb
+```
+
+The game uses `game/src/module_bindings`; `scripts/dev.sh` regenerates both.

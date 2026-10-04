@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import secrets
 import threading
@@ -43,6 +44,7 @@ SID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 
 LOCK = threading.RLock()
 PUBLIC = {"url": None}
+STDB = {"db": None}  # ground.stdb.Stdb when --stdb is given: hikes go to the team's SpacetimeDB
 
 
 def _load(name: str, default):
@@ -57,13 +59,15 @@ def _save(name: str, obj, d: Path = OUT):
     tmp.replace(d / name)
 
 
-def new_invite(phone: str | None) -> dict:
+def new_invite(phone: str | None, code: str | None = None) -> dict:
+    """code: the person's join code from the agent. SpacetimeDB only ever sees the code, never the phone."""
     if not PUBLIC["url"]:
         raise RuntimeError("public url not set: start the server with --public https://<your tunnel>")
     with LOCK:
         inv = _load("invites.json", {})
         token = secrets.token_urlsafe(9)
-        inv[token] = {"phone": phone, "created": time.time(), "link": f"{PUBLIC['url']}/g/{token}"}
+        inv[token] = {"phone": phone, "code": (code or "").strip().upper() or None, "created": time.time(),
+                      "link": f"{PUBLIC['url']}/g/{token}"}
         _save("invites.json", inv)
         return {"token": token, **inv[token]}
 
@@ -127,6 +131,10 @@ def user_hikes(phone: str) -> list[dict]:
 def delete_user(phone: str) -> dict:
     import shutil
     with LOCK:
+        if STDB["db"]:  # the database first: if it fails, nothing local is gone and the hiker can retry
+            for code in {v.get("code") for v in _load("invites.json", {}).values()
+                         if same_phone(v.get("phone"), phone) and v.get("code")}:
+                STDB["db"].delete_hikes(code)
         sids = sessions_of(phone)
         for sid in sids:
             shutil.rmtree(OUT / "sessions" / sid)
@@ -175,19 +183,50 @@ def _finalize(sid: str):
     from ground.register import message, register  # heavy imports (scipy, PIL, mujoco via course) only when needed
     d = OUT / "sessions" / sid
     consent = json.loads((d / "consent.json").read_text())
-    phone = _load("invites.json", {}).get(consent["token"], {}).get("phone")
+    invite = _load("invites.json", {}).get(consent["token"], {})
+    phone, code = invite.get("phone"), invite.get("code")
     try:
         s = register(d)
         _save("summary.json", s, d)
         text = message(s)
-        msg = enqueue(phone, text, sid)
-        _save("status.json", {"status": "done", "message": text, "outbox_id": msg and msg["id"],
-                              "message_status": "pending" if msg else "no phone on invite, nothing to send"}, d)
+        st = {"status": "done", "message": text}
+        if STDB["db"]:
+            try:
+                n = to_stdb(d, s, code, text)
+                st["stdb"] = f"recorded in {STDB['db']} ({n} chunks)"
+                st["message_status"] = "queued in spacetimedb outbox" if code else "no join code on invite, nothing to send"
+            except Exception as e:  # noqa: BLE001  the hike is safe on disk; the dashboard shows this in red
+                st["stdb_error"] = f"{type(e).__name__}: {e}"
+                print(f"[ground] {sid} SPACETIMEDB WRITE FAILED: {e}")
+        if "message_status" not in st:  # no database, or it failed: text through the local outbox
+            msg = enqueue(phone, text, sid)
+            st["outbox_id"] = msg and msg["id"]
+            st["message_status"] = "pending" if msg else "no phone on invite, nothing to send"
+        _save("status.json", st, d)
         print(f"[ground] {sid} done\n{text}")
     except Exception as e:  # noqa: BLE001
         tb = traceback.format_exc()
         _save("status.json", {"status": "failed", "error": f"{type(e).__name__}: {e}", "traceback": tb}, d)
         print(f"[ground] {sid} REGISTRATION FAILED\n{tb}")
+
+
+def to_stdb(d: Path, s: dict, code: str | None, text: str) -> int:
+    """The registered hike and its per-second rows, written to SpacetimeDB. Returns the number of chunks."""
+    from ground.motion import per_second
+    from ground.schema import load_session
+    meta, data, _ = load_session(d)
+    tm = s.get("trail_match") or {}
+    named = [n for n, _ in tm.get("top") or [] if not n.startswith("unnamed")]
+    climb = (s.get("climb_baro_m") or s.get("climb_dem_m") or {}).get("gain") or 0.0
+    db = STDB["db"]
+    db.record_hike(key=d.name, joinCode=code or "", placement=s.get("placement") or "", startedS=s.get("started") or 0,
+                   endedS=s.get("ended") or 0, distanceM=s.get("distance_m") or 0.0, climbM=climb,
+                   trail=named[0] if named else "", sacScale=(tm.get("sac_scale") or [[""]])[0][0],
+                   surface=(tm.get("surface") or [[""]])[0][0], motionSamples=s["imu"]["samples"],
+                   rateHz=s["imu"]["rate_hz"], gaps=s["gaps"]["count"], gapS=s["gaps"]["total_s"],
+                   cadenceSpm=s.get("cadence_spm") or 0.0, message=text if code else "")
+    rows = per_second(meta, data)
+    return db.push_samples(d.name, rows) if rows else 0
 
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -227,8 +266,9 @@ def dashboard() -> str:
         st = session_status(d.name)
         s = st.get("summary") or {}
         status = st.get("status", "?")
-        bad = status == "failed" or s.get("errors") or s.get("gaps", {}).get("count")
-        detail = st.get("error") or "; ".join(s.get("errors", [])) or (
+        bad = status == "failed" or s.get("errors") or s.get("gaps", {}).get("count") or st.get("stdb_error")
+        detail = st.get("error") or (st.get("stdb_error") and "SPACETIMEDB WRITE FAILED: " + st["stdb_error"]) or \
+            "; ".join(s.get("errors", [])) or (
             f"{s.get('distance_m', '?')} m, trails {((s.get('trail_match') or {}).get('top') or [])[:2]}" if s else
             ("missing " + ", ".join(st.get("missing", [])) if st.get("missing") else ""))
         imu = s.get("imu", {})
@@ -246,7 +286,7 @@ def dashboard() -> str:
                     f"<td><pre>{html.escape(m['text'])}</pre></td></tr>")
     agent = _load("agent.json", {})
     age = time.time() - agent.get("seen", 0)
-    info = (f"public url {PUBLIC['url'] or 'NOT SET'} · photon agent "
+    info = (f"public url {PUBLIC['url'] or 'NOT SET'} · spacetimedb {STDB['db'] or 'off (hikes stay on this mac)'} · photon agent "
             + (f"polled {age:.0f} s ago" if age < 30 else "<span class='bad'>not running</span>"))
     return DASH.replace("__INFO__", info).replace("__ROWS__", "".join(rows)).replace("__OUT__", "".join(outs))
 
@@ -309,7 +349,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err(400, "body is not json")
         if p == "/api/invite":
             try:
-                self._json(new_invite(body.get("phone")))
+                self._json(new_invite(body.get("phone"), body.get("code")))
             except RuntimeError as e:
                 self._err(500, str(e))
         elif p == "/api/consent":
@@ -329,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
             if not body.get("phone"):
                 return self._err(400, "phone required")
             try:
-                inv = new_invite(body["phone"])
+                inv = new_invite(body["phone"], body.get("code"))
             except RuntimeError as e:
                 return self._err(500, str(e))
             text = body.get("text") or (f"looks like you're heading out on a trail. want this one to help train rescue "
@@ -346,11 +386,20 @@ class Handler(BaseHTTPRequestHandler):
                 labels = json.loads((d / "labels.json").read_text()) if (d / "labels.json").exists() else []
                 labels.append({"text": text[:2000], "at": time.time(), "source": body.get("source", "agent")})
                 _save("labels.json", labels, d)
+            st = session_status(sid)
+            if STDB["db"] and st.get("stdb"):
+                try:
+                    STDB["db"].label(sid, text)
+                except Exception as e:  # noqa: BLE001
+                    return self._err(502, f"label saved on this server but not in spacetimedb: {e}")
             self._json({"ok": True, "labels": len(labels)})
         elif p == "/api/delete":
             if not body.get("phone"):
                 return self._err(400, "phone required")
-            self._json({"ok": True, "deleted": delete_user(body["phone"])})
+            try:
+                self._json({"ok": True, "deleted": delete_user(body["phone"])})
+            except Exception as e:  # noqa: BLE001
+                self._err(502, f"nothing deleted, spacetimedb refused: {e}")
         elif m := re.fullmatch(r"/api/outbox/([0-9a-f]+)/(sent|failed)", p):
             with LOCK:
                 box = _load("outbox.json", [])
@@ -402,9 +451,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--public", help="https base URL phones reach this server at (the cloudflared tunnel)")
     ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--stdb", default=os.environ.get("STDB_HTTP"),
+                    help="SpacetimeDB to write hikes to: http://127.0.0.1:3000 or https://maincloud.spacetimedb.com")
+    ap.add_argument("--stdb-db", default=os.environ.get("STDB_DB", "ground-truth"))
     a = ap.parse_args()
     PUBLIC["url"] = a.public.rstrip("/") if a.public else None
     OUT.mkdir(parents=True, exist_ok=True)
+    if a.stdb:
+        from ground.stdb import Stdb
+        STDB["db"] = Stdb(a.stdb, a.stdb_db, OUT / "stdb_identity.json")
+        STDB["db"].claim()  # fails loudly if another identity already owns hike writes
+        print(f"[ground] spacetimedb {STDB['db']}: hike writer claimed")
     if not PUBLIC["url"]:
         print("[ground] WARNING: no --public url, invites will fail until you restart with one")
     print(f"[ground] http://127.0.0.1:{a.port}  public {PUBLIC['url']}")

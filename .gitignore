@@ -30,3 +30,14 @@ ios/GroundTruth/GroundTruth.xcodeproj/
 ios/GroundTruth/Local.xcconfig
 ios/GroundTruth/build/
 ground/agent/.env
+
+# MHacks game, SpacetimeDB module and the old agent (from main)
+game/node_modules/
+game/dist/
+game/.env
+agent/node_modules/
+agent/.env
+agent/.agent-state.json
+spacetime/spacetimedb/node_modules/
+spacetime/spacetime.local.json
+spacetime/spacetimedb/dist/
