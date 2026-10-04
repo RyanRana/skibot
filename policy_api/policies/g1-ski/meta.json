@@ -1,0 +1,175 @@
+{
+ "id": "g1-ski",
+ "name": "G1 ski, best benchmark",
+ "robot": "unitree_g1_29dof",
+ "skill": "ski",
+ "obs_dim": 141,
+ "action_dim": 31,
+ "control_hz": 50,
+ "physics_dt": 0.002,
+ "decimation": 10,
+ "architecture": {
+  "type": "mlp",
+  "layers": [
+   141,
+   512,
+   256,
+   128,
+   31
+  ],
+  "activation": "elu",
+  "normalizer": "obs_n = (obs - mean) / (std + 0.01), mean and std in weights.npz",
+  "output": "deterministic mean action, clipped to [-3, 3]",
+  "params": 240927,
+  "files": {
+   "onnx": "policy.onnx (input obs [B, obs_dim], output actions [B, 31])",
+   "weights": "weights.npz: mean, std, eps, W0..W3 [out, in], b0..b3"
+  }
+ },
+ "observation": [
+  {
+   "name": "base_ang_vel",
+   "start": 0,
+   "size": 3,
+   "desc": "body-frame angular velocity, rad/s x 0.25"
+  },
+  {
+   "name": "gravity",
+   "start": 3,
+   "size": 3,
+   "desc": "gravity direction in the body frame"
+  },
+  {
+   "name": "base_lin_vel",
+   "start": 6,
+   "size": 3,
+   "desc": "body-frame linear velocity, m/s x 0.2"
+  },
+  {
+   "name": "joint_pos",
+   "start": 9,
+   "size": 29,
+   "desc": "joint angles, rad, MuJoCo order"
+  },
+  {
+   "name": "joint_vel",
+   "start": 38,
+   "size": 29,
+   "desc": "joint velocities, rad/s x 0.05, MuJoCo order"
+  },
+  {
+   "name": "last_action",
+   "start": 67,
+   "size": 31,
+   "desc": "previous action from this policy"
+  },
+  {
+   "name": "ski_edge",
+   "start": 98,
+   "size": 2,
+   "desc": "edge angle per ski, rad"
+  },
+  {
+   "name": "ski_normal_force",
+   "start": 100,
+   "size": 2,
+   "desc": "snow normal force per ski, N / 200"
+  },
+  {
+   "name": "ski_v_along",
+   "start": 102,
+   "size": 2,
+   "desc": "velocity along each ski, m/s x 0.1"
+  },
+  {
+   "name": "ski_v_lateral",
+   "start": 104,
+   "size": 2,
+   "desc": "sideways velocity per ski, m/s"
+  },
+  {
+   "name": "ski_zones",
+   "start": 106,
+   "size": 8,
+   "desc": "pressure under front/rear of inner/outer edge per ski, / 175"
+  },
+  {
+   "name": "height_scan",
+   "start": 114,
+   "size": 24,
+   "desc": "terrain height minus pelvis height, clamped to [-3, 1] m, at body-frame x in [-1.0, 0.0, 1.0, 2.0, 3.5, 5.0, 7.5, 10.0] m by y in [-1.5, 0.0, 1.5] m (x major)"
+  },
+  {
+   "name": "command",
+   "start": 138,
+   "size": 3,
+   "desc": "sin and cos of heading error, target speed m/s / 10"
+  }
+ ],
+ "action": {
+  "clip": [
+   -3.0,
+   3.0
+  ],
+  "layout": [
+   {
+    "name": "lean",
+    "start": 0,
+    "size": 2,
+    "scale": 0.35,
+    "desc": "body lean target (roll, pitch) handed to SONIC as its command, rad after scale"
+   },
+   {
+    "name": "joint_residual",
+    "start": 2,
+    "size": 29,
+    "scale": 0.5,
+    "desc": "offsets added to SONIC's joint targets, rad after scale, SONIC (IsaacLab) joint order",
+    "joints": [
+     "left_hip_pitch_joint",
+     "right_hip_pitch_joint",
+     "waist_yaw_joint",
+     "left_hip_roll_joint",
+     "right_hip_roll_joint",
+     "waist_roll_joint",
+     "left_hip_yaw_joint",
+     "right_hip_yaw_joint",
+     "waist_pitch_joint",
+     "left_knee_joint",
+     "right_knee_joint",
+     "left_shoulder_pitch_joint",
+     "right_shoulder_pitch_joint",
+     "left_ankle_pitch_joint",
+     "right_ankle_pitch_joint",
+     "left_shoulder_roll_joint",
+     "right_shoulder_roll_joint",
+     "left_ankle_roll_joint",
+     "right_ankle_roll_joint",
+     "left_shoulder_yaw_joint",
+     "right_shoulder_yaw_joint",
+     "left_elbow_joint",
+     "right_elbow_joint",
+     "left_wrist_roll_joint",
+     "right_wrist_roll_joint",
+     "left_wrist_pitch_joint",
+     "right_wrist_pitch_joint",
+     "left_wrist_yaw_joint",
+     "right_wrist_yaw_joint"
+    ]
+   }
+  ],
+  "downstream": "joint_target = default_angle + (sonic(lean) + residual) * action_scale, then PD at 500 Hz"
+ },
+ "controller": "NVIDIA GEAR-SONIC encoder/decoder, frozen (NVIDIA Open Model License); not included here",
+ "benchmark": {
+  "clean_runs": 19,
+  "of": 24,
+  "seconds_per_run": 12,
+  "baseline_sonic_only": 1
+ },
+ "provenance": {
+  "checkpoint": "runs_live/20261003-182406/model_1900.pt",
+  "iteration": 1900,
+  "trainer": "rsl_rl PPO"
+ }
+}

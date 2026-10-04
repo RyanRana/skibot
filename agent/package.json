@@ -1,0 +1,19 @@
+{
+  "name": "ground-truth-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/agent.ts",
+    "dev": "tsx watch src/agent.ts"
+  },
+  "dependencies": {
+    "spacetimedb": "2.10.2",
+    "spectrum-ts": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3"
+  }
+}

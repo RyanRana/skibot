@@ -1,0 +1,16 @@
+{
+  "name": "ground-truth-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx agent.mjs",
+    "chat": "tsx agent.mjs --terminal",
+    "collect": "tsx collect.mjs",
+    "test": "tsx test.mjs"
+  },
+  "dependencies": {
+    "spacetimedb": "2.10.2",
+    "spectrum-ts": "^12.10.1",
+    "tsx": "^4.23.15"
+  }
+}

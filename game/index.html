@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ground Truth: Ski</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="hud">
+  <div class="top">
+    <div class="left-col">
+      <div class="panel course">
+        <div class="eyebrow" id="course-resort">Kitzbühel</div>
+        <div class="title" id="course-name">Streif</div>
+        <div class="sub" id="course-stats"></div>
+      </div>
+      <div class="splits" id="splits"></div>
+    </div>
+    <div class="center">
+      <div class="clock" id="clock">0:00.00</div>
+      <div class="ghostline" id="ghost"></div>
+      <div class="speed"><span id="speed">0</span><small>km/h</small></div>
+      <div class="streak" id="streak"></div>
+      <div class="gates" id="gates"></div>
+    </div>
+    <div class="right-col">
+      <div class="panel dataset">
+        <div class="eyebrow">Ground Truth · live</div>
+        <div class="big mint" id="ds-samples">0</div>
+        <div class="sub"><span id="ds-runs">0</span> runs · <span id="ds-skiers">0</span> skiers · <span id="ds-online">0</span> on the mountain</div>
+      </div>
+      <div class="cheer" id="cheer"></div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="panel board">
+      <div class="eyebrow">Fastest today</div>
+      <ol id="leaderboard"></ol>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="cam">
+      <canvas id="cam-canvas" width="320" height="240"></canvas>
+      <div class="cam-label" id="cam-label">camera off</div>
+    </div>
+    <div class="meters">
+      <div class="meter"><span>lean</span><div class="bar lean"><i id="lean-bar"></i></div></div>
+      <div class="meter"><span>tuck</span><div class="bar"><i id="crouch-bar"></i></div></div>
+      <div class="hint" id="hint">Lean to carve · crouch to tuck · hop to jump</div>
+    </div>
+    <div class="feed" id="feed"></div>
+  </div>
+
+  <div class="split-pop" id="split-pop"></div>
+  <div class="msg" id="msg"></div>
+  <div class="toast" id="toast"></div>
+  <div class="result" id="result"></div>
+  <div class="intro" id="intro"></div>
+</div>
+
+<div id="start" class="overlay hidden"><div class="fine" id="status"></div><canvas id="attract-canvas" width="640" height="480" hidden></canvas><div id="attract-label" hidden></div></div>
+
+<video id="cam" playsinline muted style="display:none"></video>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
