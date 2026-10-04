@@ -1,0 +1,27 @@
+[
+ {
+  "id": "g1-ski",
+  "name": "G1 ski, best benchmark",
+  "robot": "unitree_g1_29dof",
+  "skill": "ski",
+  "obs_dim": 141,
+  "action_dim": 31,
+  "control_hz": 50,
+  "benchmark": {
+   "clean_runs": 19,
+   "of": 24,
+   "seconds_per_run": 12,
+   "baseline_sonic_only": 1
+  }
+ },
+ {
+  "id": "g1-ski-trees",
+  "name": "G1 ski with tree avoidance, newest",
+  "robot": "unitree_g1_29dof",
+  "skill": "ski",
+  "obs_dim": 156,
+  "action_dim": 31,
+  "control_hz": 50,
+  "benchmark": null
+ }
+]

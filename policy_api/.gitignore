@@ -1,0 +1,3 @@
+!*.onnx
+.venv/
+__pycache__/

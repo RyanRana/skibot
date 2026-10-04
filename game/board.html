@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ground Truth: Mountain</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body class="board-page">
+<div class="board-grid">
+  <div class="map-wrap">
+    <canvas id="map"></canvas>
+    <div class="map-title"><div class="eyebrow" id="b-resort">Kitzbühel</div><div class="title" id="b-course">Streif</div><div class="sub" id="b-stats"></div></div>
+  </div>
+  <aside>
+    <div class="panel dataset">
+      <div class="eyebrow">Ground Truth · motion on real ground</div>
+      <div class="huge mint" id="b-samples">0</div>
+      <div class="sub"><span id="b-runs">0</span> runs · <span id="b-meters">0</span> m skied · <span id="b-skiers">0</span> skiers</div>
+    </div>
+    <div class="panel">
+      <div class="eyebrow">On the mountain now</div>
+      <ul id="b-live"></ul>
+    </div>
+    <div class="panel">
+      <div class="eyebrow">Fastest</div>
+      <ol id="b-board"></ol>
+    </div>
+    <div class="panel cheerbox">
+      <div class="eyebrow">Cheer from your phone</div>
+      <div class="sub">Pick a skier, ring the bell. Every screen hears it.</div>
+      <select id="cheer-target"><option value="">Everyone on the course</option></select>
+      <input id="cheer-name" maxlength="20" placeholder="your name" autocomplete="off">
+      <div class="cheer-buttons">
+        <button data-kind="bell">🔔 Cowbell</button>
+        <button data-kind="clap">👏 Clap</button>
+        <button data-kind="fire">🔥 Fire</button>
+      </div>
+    </div>
+    <div class="panel join">
+      <div class="eyebrow">Join</div>
+      <canvas id="qr" width="160" height="160"></canvas>
+      <div class="sub">Scan to ski.</div>
+    </div>
+  </aside>
+  <div class="ticker" id="b-feed"></div>
+</div>
+<script type="module" src="/src/board.ts"></script>
+</body>
+</html>

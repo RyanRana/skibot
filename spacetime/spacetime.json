@@ -1,0 +1,5 @@
+{
+  "server": "maincloud",
+  "database": "ground-truth",
+  "module-path": "./spacetimedb"
+}
