@@ -4,7 +4,7 @@ Unitree G1 humanoids skiing real Olympic and World Cup pistes in MuJoCo. Type a 
 
 ## MHacks 2026: Ground Truth
 
-The hackathon build on top of this repo: ski the real Streif in the browser with your body (webcam pose), with the Unitree G1 copying you, everyone live on one shared mountain through SpacetimeDB, every run growing a motion-on-terrain dataset, and an iMessage agent on Photon that hands out join codes and texts results. See [GAME.md](GAME.md) for what it looks like, how it plays and how to run it (`scripts/dev.sh`). The long version of the idea is in [VISION.md](VISION.md).
+The hackathon build on top of this repo: ski the real Streif in the browser with your body (webcam pose), with the Unitree G1 copying you, everyone live on one shared mountain through SpacetimeDB, every run adding to a shared motion-on-terrain dataset, and an iMessage agent on Photon that hands out join codes and texts results. See [GAME.md](GAME.md) for what it looks like, how it plays and how to run it (`scripts/dev.sh`). The long version of the idea is in [VISION.md](VISION.md).
 
 ## Results so far
 
