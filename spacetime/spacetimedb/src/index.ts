@@ -1,7 +1,7 @@
 // Ground Truth: one shared mountain. Every skier who opens the game is on the same real piste at the
 // same time, every finished run grows the motion + terrain dataset, and the iMessage agent reads the
 // outbox to text people their results.
-import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
+import { schema, table, t, SenderError, type InferSchema, type ReducerCtx, type ViewCtx, type AnonymousViewCtx } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
 
 // One motion sample registered to the ground under it: where the body was, how it was leaning and
@@ -295,10 +295,433 @@ const captureStats = table(
   }
 );
 
-const spacetimedb = schema({ player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, tickTimer, hike, hikeChunk, hikeStats, hikeWriter, capture, captureChunk, captureStats });
+// -------------------------------------------------------------------------------------------- tenants
+// Organisations own everything outside the live game. Hazard Intelligence is the one public tenant: our maps, video,
+// GoPro telemetry and training inputs are open data. Every other organisation (a resort, a rescue team, a lab, a
+// partner app) is private. Tenant rows sit in private tables: the public_* views serve public tenants' rows to anyone,
+// and the my_* views serve each caller the rows of the organisations they belong to. The game, hike and outbox tables
+// above stay as they are, because the game, the agent and the phone server read and write them directly.
+
+const account = table(
+  { name: 'account' },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string(),
+    kind: t.string(), // person, or service for a server such as the loader or the policy API
+    activeTenant: t.string(), // where this identity's new data lands
+    createdAt: t.timestamp(),
+    lastSeen: t.timestamp(),
+  }
+);
+
+const tenant = table(
+  { name: 'tenant' },
+  {
+    id: t.string().primaryKey(), // slug: hazard-intelligence, vail-ski-patrol
+    name: t.string(),
+    kind: t.string(), // team, resort, rescue, lab, partner
+    visibility: t.string(), // public: anyone reads its rows; private: members only
+    createdBy: t.identity(),
+    createdAt: t.timestamp(),
+  }
+);
+
+// owner and admin manage the organisation; member and service read and write its data; viewer only reads.
+const member = table(
+  { name: 'member' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    tenantId: t.string().index('btree'),
+    identity: t.identity().index('btree'),
+    role: t.string(),
+    addedBy: t.identity(),
+    createdAt: t.timestamp(),
+  }
+);
+
+const invite = table(
+  { name: 'invite' },
+  {
+    code: t.string().primaryKey(),
+    tenantId: t.string().index('btree'),
+    role: t.string(),
+    maxUses: t.u32(),
+    uses: t.u32(),
+    createdBy: t.identity(),
+    createdAt: t.timestamp(),
+  }
+);
+
+// The one identity that runs the platform: it creates the public tenant. Claimed once, right after publishing.
+const platformAdmin = table(
+  { name: 'platform_admin' },
+  {
+    id: t.u8().primaryKey(),
+    admin: t.identity(),
+  }
+);
+
+// ----------------------------------------------------------------------------------------- maps and terrain
+// Every row below carries the tenant that owns it. Coordinates are in each course's local frame: x east, y north,
+// z up, metres, around (originLat, originLon); heights are relative to zDatumMsl.
+
+const resort = table(
+  { name: 'resort' },
+  {
+    id: t.string().primaryKey(), // kitzbuhel
+    tenant: t.string().index('btree'),
+    name: t.string(),
+    country: t.string(),
+    lat: t.f64(),
+    lon: t.f64(),
+    osm: t.string(), // relation/85657
+    source: t.string(),
+    meta: t.string(), // JSON
+    updatedAt: t.timestamp(),
+  }
+);
+
+// A point on a course centreline, s metres along it.
+const LinePoint = t.object('LinePoint', { x: t.f32(), y: t.f32(), z: t.f32(), s: t.f32() });
+
+// A slalom gate: pass between the turn pole and the outer pole (pole bases on the snow).
+const Gate = t.object('Gate', {
+  s: t.f32(),
+  side: t.string(),
+  color: t.string(),
+  turn: t.string(),
+  turnX: t.f32(), turnY: t.f32(), turnZ: t.f32(),
+  outerX: t.f32(), outerY: t.f32(), outerZ: t.f32(),
+});
+
+// A ski run, a hiking route or a climbing wall: the line a person or robot follows and where it starts.
+const course = table(
+  { name: 'course' },
+  {
+    id: t.string().primaryKey(), // kitzbuhel-streif
+    tenant: t.string().index('btree'),
+    resortId: t.string().index('btree'), // empty for a trail
+    name: t.string(),
+    activity: t.string().index('btree'), // ski, hike, climb
+    difficulty: t.string(),
+    lengthM: t.f32(),
+    dropM: t.f32(),
+    meanSlopeDeg: t.f32(),
+    maxSlopeDeg: t.f32(),
+    originLat: t.f64(),
+    originLon: t.f64(),
+    zDatumMsl: t.f32(),
+    line: t.array(LinePoint), // the course itself
+    fullRun: t.array(LinePoint), // the whole run the course was cut from
+    gates: t.array(Gate),
+    startPose: t.string(), // JSON: where and how the robot starts
+    scene: t.string(), // MuJoCo scene for the G1 on this course
+    stats: t.string(), // JSON: build stats, OSM ids, sources
+    source: t.string(),
+    license: t.string(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+// A grid on a regular lattice: ny rows of nx values, row-major, cell metres apart, starting at (x0, y0). The layer
+// says what the values are: ground elevation, canopy height, far-field terrain, or a mosaic of training tiles.
+// The values live in terrain_chunk rows of whole rows, so one course is a handful of rows of about 100 KB.
+const terrain = table(
+  { name: 'terrain' },
+  {
+    id: t.string().primaryKey(), // kitzbuhel-streif, bird-hills/canopy, ski-tiles-v4
+    tenant: t.string().index('btree'),
+    courseId: t.string().index('btree'), // empty for a training mosaic
+    layer: t.string(), // elevation, canopy, far, tiles
+    nx: t.u32(),
+    ny: t.u32(),
+    cellM: t.f32(),
+    x0: t.f32(),
+    y0: t.f32(),
+    zMin: t.f32(),
+    zMax: t.f32(),
+    rows: t.u32(), // rows received so far; complete when rows == ny
+    source: t.string(),
+    license: t.string(),
+    meta: t.string(), // JSON: projection, DEM, smoothing
+    updatedAt: t.timestamp(),
+  }
+);
+
+const terrainChunk = table(
+  { name: 'terrain_chunk' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    terrainId: t.string().index('btree'),
+    tenant: t.string().index('btree'),
+    row0: t.u32(),
+    heights: t.array(t.f32()), // whole rows: length is a multiple of nx
+  }
+);
+
+// ground.py: every trail or road around a place, each with an elevation profile, like OpenSkiMap's runs.
+const trailNetwork = table(
+  { name: 'trail_network' },
+  {
+    id: t.string().primaryKey(), // annarbor
+    tenant: t.string().index('btree'),
+    name: t.string(),
+    place: t.string(),
+    kind: t.string(), // trails, walk, roads, all
+    centerLat: t.f64(),
+    centerLon: t.f64(),
+    radiusM: t.f32(),
+    ways: t.u32(),
+    lengthKm: t.f32(),
+    areas: t.u32(),
+    sources: t.string(), // JSON: OSM and elevation licences
+    meta: t.string(), // JSON: the rest of meta.json
+    updatedAt: t.timestamp(),
+  }
+);
+
+const LatLon = t.object('LatLon', { lat: t.f64(), lon: t.f64() });
+
+const trail = table(
+  { name: 'trail' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    key: t.string().unique(), // network/way/123
+    network: t.string().index('btree'),
+    tenant: t.string().index('btree'),
+    osm: t.string(), // way/4687992
+    name: t.string(),
+    highway: t.string(),
+    surface: t.string(),
+    sacScale: t.string(),
+    area: t.string(), // the park or reserve it runs through
+    lengthM: t.f32(),
+    climbM: t.f32(),
+    descentM: t.f32(),
+    maxGradeDeg: t.f32(),
+    path: t.array(LatLon),
+    profileStepM: t.f32(),
+    profile: t.array(t.f32()), // elevation every profileStepM along the way, metres MSL
+    tags: t.string(), // JSON: every other OSM tag and statistic
+  }
+);
+
+// Parks, nature reserves and protected areas holding a network's trails.
+const area = table(
+  { name: 'area' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    key: t.string().unique(), // network/way/27785567
+    network: t.string().index('btree'),
+    tenant: t.string().index('btree'),
+    osm: t.string(),
+    name: t.string(),
+    kind: t.string(), // park, nature_reserve, protected_area
+    ways: t.u32(),
+    lengthM: t.f32(),
+    geometry: t.string(), // GeoJSON MultiPolygon
+    stats: t.string(), // JSON
+  }
+);
+
+// ------------------------------------------------------------------------------------------- recordings
+// One shape for every stream an organisation records: phone IMU and GPS, game joint angles, joints from video, GoPro
+// telemetry, robot rollouts in simulation. A recording declares its channels and their units once; its chunks are
+// flat f32 frames (frame-major, channels.length values per frame). Regular streams set rateHz and leave tMs empty
+// (frame i is at t0Ms + i * 1000 / rateHz); irregular ones send one tMs per frame. The capture tables above are the
+// first version of this, kept as they were so publishing never disconnects a client; nothing writes them.
+const recording = table(
+  { name: 'recording' },
+  {
+    key: t.string().primaryKey(), // video/fXVIpXY3rI4, gopro/GX010060ap
+    tenant: t.string().index('btree'),
+    source: t.string().index('btree'), // phone, game, video, gopro, sim
+    activity: t.string().index('btree'), // ski, hike, climb
+    ref: t.string(), // the course, hike, run or video it belongs to
+    uri: t.string(), // where the raw file lives (a video URL), if anywhere
+    channels: t.array(t.string()),
+    units: t.array(t.string()), // one per channel: rad, deg, deg/s, m, m/s, m/s2, bool
+    rateHz: t.f32(), // 0 = irregular
+    frames: t.u64(),
+    chunks: t.u32(),
+    title: t.string(),
+    license: t.string(),
+    meta: t.string(), // JSON: device, model version, author, anything else
+    writer: t.identity(),
+    closed: t.bool(),
+    startedAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+const recordingChunk = table(
+  { name: 'recording_chunk' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    recordingKey: t.string().index('btree'),
+    tenant: t.string().index('btree'),
+    seq: t.u32(),
+    t0Ms: t.u64(),
+    tMs: t.array(t.u32()),
+    data: t.array(t.f32()),
+  }
+);
+
+
+// Points on a course or a terrain: trees and bushes along a trail, the holds on a climbing wall. Each point is
+// columns.length values (x, y, crown radius, height...), stored flat in point_chunk rows.
+const pointSet = table(
+  { name: 'point_set' },
+  {
+    id: t.string().primaryKey(), // bird-hills/trees
+    tenant: t.string().index('btree'),
+    courseId: t.string().index('btree'),
+    kind: t.string(), // trees, holds
+    columns: t.array(t.string()),
+    units: t.array(t.string()),
+    count: t.u32(), // points received so far
+    source: t.string(),
+    license: t.string(),
+    meta: t.string(), // JSON
+    updatedAt: t.timestamp(),
+  }
+);
+
+const pointChunk = table(
+  { name: 'point_chunk' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    setId: t.string().index('btree'),
+    tenant: t.string().index('btree'),
+    seq: t.u32(),
+    data: t.array(t.f32()), // whole points
+  }
+);
+
+// --------------------------------------------------------------------------------------- training inputs
+// Time spans inside a recording: a GoPro descent, a turn, a climbing move.
+const segment = table(
+  { name: 'segment' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    key: t.string().unique(),
+    recordingKey: t.string().index('btree'),
+    tenant: t.string().index('btree'),
+    kind: t.string(), // descent, turn, move
+    t0Ms: t.u64(),
+    t1Ms: t.u64(),
+    label: t.string(),
+    meta: t.string(), // JSON
+  }
+);
+
+// A robot pose measured from people: the G1 joint targets (radians) for one phase of a skill.
+const referencePose = table(
+  { name: 'reference_pose' },
+  {
+    id: t.string().primaryKey(), // ski/neutral
+    tenant: t.string().index('btree'),
+    activity: t.string(),
+    phase: t.string(),
+    robot: t.string(), // unitree_g1_29dof
+    joints: t.array(t.string()),
+    values: t.array(t.f32()),
+    frames: t.u32(), // video frames averaged
+    human: t.string(), // JSON: the human joint angles behind it, degrees
+    sources: t.string(), // JSON: which videos, how many frames each
+    updatedAt: t.timestamp(),
+  }
+);
+
+// What a model trains on: named lists of courses, terrains, captures and reference poses.
+const trainingSet = table(
+  { name: 'training_set' },
+  {
+    id: t.string().primaryKey(), // g1-ski
+    tenant: t.string().index('btree'),
+    name: t.string(),
+    activity: t.string(),
+    robot: t.string(),
+    description: t.string(),
+    courses: t.array(t.string()),
+    terrains: t.array(t.string()),
+    recordings: t.array(t.string()),
+    referencePoses: t.array(t.string()),
+    meta: t.string(), // JSON: curriculum, tiles, anything the trainer reads
+    updatedAt: t.timestamp(),
+  }
+);
+
+// ------------------------------------------------------------------------------------------------ models
+// The policy registry. Weights and the ONNX runtime stay on Modal; this is everything about a policy that is not code.
+const policy = table(
+  { name: 'policy' },
+  {
+    id: t.string().primaryKey(), // g1-ski
+    tenant: t.string().index('btree'),
+    name: t.string(),
+    robot: t.string(),
+    skill: t.string(),
+    obsDim: t.u32(),
+    actionDim: t.u32(),
+    controlHz: t.f32(),
+    runtime: t.string(), // modal
+    endpoint: t.string(), // where the runtime serves it
+    trainingSet: t.string(),
+    benchmark: t.string(), // JSON
+    spec: t.string(), // JSON: the full meta.json (architecture, every observation slice, action layout, provenance)
+    updatedAt: t.timestamp(),
+  }
+);
+
+// One training run: what it trained on, how far it got and how it scored.
+const trainRun = table(
+  { name: 'train_run' },
+  {
+    id: t.string().primaryKey(), // g1-hike/20261003-201557
+    tenant: t.string().index('btree'),
+    policyId: t.string().index('btree'),
+    trainingSet: t.string(),
+    hardware: t.string(),
+    status: t.string(), // running, done, stopped
+    iterations: t.u32(),
+    checkpoint: t.string(), // where the weights are, e.g. a Modal volume path
+    metrics: t.string(), // JSON
+    benchmark: t.string(), // JSON
+    notes: t.string(),
+    startedAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+
+// How a policy checkpoint did: on the fixed benchmark, riding a course, or walking a trail stretch.
+const evaluation = table(
+  { name: 'evaluation' },
+  {
+    id: t.string().primaryKey(), // benchmark/v2-1325, ride/<checkpoint>/<course>
+    tenant: t.string().index('btree'),
+    policyId: t.string().index('btree'),
+    runId: t.string().index('btree'),
+    checkpoint: t.string(),
+    kind: t.string(), // benchmark, ride, hike
+    courseId: t.string(),
+    summary: t.string(), // JSON: the headline numbers
+    detail: t.string(), // JSON: per tile, per gate, crash events
+    at: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({
+  player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, tickTimer, hike, hikeChunk, hikeStats,
+  hikeWriter, capture, captureChunk, captureStats, account, tenant, member, invite, platformAdmin, resort, course, terrain,
+  terrainChunk, trailNetwork, trail, area, recording, recordingChunk, pointSet, pointChunk, segment, referencePose, trainingSet, policy, trainRun, evaluation,
+});
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
+type VCtx = ViewCtx<InferSchema<typeof spacetimedb>>;
+type AVCtx = AnonymousViewCtx<InferSchema<typeof spacetimedb>>;
 
 const STALE_MICROS = 10_000_000n;
 const FEED_MAX = 60;
@@ -640,3 +1063,654 @@ export const closeCapture = spacetimedb.reducer({ key: t.string() }, (ctx, { key
   const c = ctx.db.capture.key.find(key);
   if (c && !c.closed && c.owner.equals(ctx.sender)) ctx.db.capture.id.update({ ...c, closed: true, endedAt: ctx.timestamp });
 });
+
+// ---------------------------------------------------------------------------------------------- tenants
+
+const HI = 'hazard-intelligence';
+const TENANT_KINDS = ['team', 'resort', 'rescue', 'lab', 'partner'];
+const ROLES = ['owner', 'admin', 'member', 'service', 'viewer'];
+const MANAGE = ['owner', 'admin'];
+const WRITE = ['owner', 'admin', 'member', 'service'];
+const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I, so a code survives being read aloud
+
+function membership(ctx: Ctx, tenantId: string, who = ctx.sender) {
+  for (const m of ctx.db.member.identity.filter(who)) if (m.tenantId === tenantId) return m;
+  return undefined;
+}
+
+function requireRole(ctx: Ctx, tenantId: string, roles: string[]) {
+  if (!ctx.db.tenant.id.find(tenantId)) throw new SenderError(`no organisation ${tenantId}`);
+  const m = membership(ctx, tenantId);
+  if (!m || !roles.includes(m.role)) throw new SenderError(`needs ${roles.join(' or ')} in ${tenantId}`);
+  return m;
+}
+
+function upsertAccount(ctx: Ctx, fields: { name?: string; kind?: string; activeTenant?: string }) {
+  const a = ctx.db.account.identity.find(ctx.sender);
+  if (a) {
+    ctx.db.account.identity.update({ ...a, ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)), lastSeen: ctx.timestamp });
+  } else {
+    ctx.db.account.insert({ identity: ctx.sender, name: fields.name ?? '', kind: fields.kind ?? 'person', activeTenant: fields.activeTenant ?? '', createdAt: ctx.timestamp, lastSeen: ctx.timestamp });
+  }
+}
+
+function addMember(ctx: Ctx, tenantId: string, who: typeof ctx.sender, role: string) {
+  const m = membership(ctx, tenantId, who);
+  if (m) {
+    // An invite never demotes: an admin redeeming a member code stays an admin.
+    if (ROLES.indexOf(role) < ROLES.indexOf(m.role)) ctx.db.member.id.update({ ...m, role });
+    return;
+  }
+  ctx.db.member.insert({ id: 0n, tenantId, identity: who, role, addedBy: ctx.sender, createdAt: ctx.timestamp });
+}
+
+function owners(ctx: Ctx, tenantId: string) {
+  return [...ctx.db.member.tenantId.filter(tenantId)].filter(m => m.role === 'owner').length;
+}
+
+// The publisher calls this once after the first publish. It makes the caller the platform admin and the owner of the
+// public Hazard Intelligence tenant, which every loader and server then writes under.
+export const claimPlatformAdmin = spacetimedb.reducer({}, ctx => {
+  const a = ctx.db.platformAdmin.id.find(0);
+  if (a && !a.admin.equals(ctx.sender)) throw new SenderError('platform admin already claimed by another identity');
+  if (!a) ctx.db.platformAdmin.insert({ id: 0, admin: ctx.sender });
+  if (!ctx.db.tenant.id.find(HI)) {
+    ctx.db.tenant.insert({ id: HI, name: 'Hazard Intelligence', kind: 'team', visibility: 'public', createdBy: ctx.sender, createdAt: ctx.timestamp });
+  }
+  addMember(ctx, HI, ctx.sender, 'owner');
+  upsertAccount(ctx, { activeTenant: HI });
+});
+
+// Anyone signed in can start an organisation and becomes its owner. New organisations are private unless asked.
+export const createTenant = spacetimedb.reducer(
+  { id: t.string(), name: t.string(), kind: t.string(), visibility: t.string() },
+  (ctx, { id, name, kind, visibility }) => {
+    const slug = id.trim().toLowerCase();
+    if (!SLUG.test(slug) || slug.length < 3 || slug.length > 48) throw new SenderError('id is 3 to 48 lowercase letters, digits and dashes');
+    if (ctx.db.tenant.id.find(slug)) throw new SenderError(`${slug} is taken`);
+    if (!TENANT_KINDS.includes(kind)) throw new SenderError(`kind must be one of ${TENANT_KINDS.join(', ')}`);
+    if (visibility !== 'public' && visibility !== 'private') throw new SenderError('visibility is public or private');
+    ctx.db.tenant.insert({ id: slug, name: name.trim().slice(0, 80) || slug, kind, visibility, createdBy: ctx.sender, createdAt: ctx.timestamp });
+    addMember(ctx, slug, ctx.sender, 'owner');
+    upsertAccount(ctx, { activeTenant: slug });
+  }
+);
+
+export const updateTenant = spacetimedb.reducer(
+  { id: t.string(), name: t.string(), kind: t.string(), visibility: t.string() },
+  (ctx, { id, name, kind, visibility }) => {
+    requireRole(ctx, id, MANAGE);
+    if (!TENANT_KINDS.includes(kind)) throw new SenderError(`kind must be one of ${TENANT_KINDS.join(', ')}`);
+    if (visibility !== 'public' && visibility !== 'private') throw new SenderError('visibility is public or private');
+    const tn = ctx.db.tenant.id.find(id)!;
+    ctx.db.tenant.id.update({ ...tn, name: name.trim().slice(0, 80) || tn.name, kind, visibility });
+  }
+);
+
+// An invite code joins whoever redeems it to the organisation with the given role (never owner).
+export const createInvite = spacetimedb.reducer(
+  { tenantId: t.string(), role: t.string(), maxUses: t.u32() },
+  (ctx, { tenantId, role, maxUses }) => {
+    const me = requireRole(ctx, tenantId, MANAGE);
+    if (!ROLES.includes(role) || role === 'owner') throw new SenderError('role is admin, member, service or viewer');
+    if (role === 'admin' && me.role !== 'owner') throw new SenderError('only an owner invites admins');
+    let code = '';
+    do {
+      code = '';
+      for (let i = 0; i < 8; i++) code += CODE_CHARS[ctx.random.integerInRange(0, CODE_CHARS.length - 1)];
+    } while (ctx.db.invite.code.find(code));
+    ctx.db.invite.insert({ code, tenantId, role, maxUses: Math.max(1, Math.min(maxUses, 10_000)), uses: 0, createdBy: ctx.sender, createdAt: ctx.timestamp });
+  }
+);
+
+export const revokeInvite = spacetimedb.reducer({ code: t.string() }, (ctx, { code }) => {
+  const inv = ctx.db.invite.code.find(code.trim().toUpperCase());
+  if (!inv) return;
+  requireRole(ctx, inv.tenantId, MANAGE);
+  ctx.db.invite.code.delete(inv.code);
+});
+
+export const redeemInvite = spacetimedb.reducer({ code: t.string(), name: t.string() }, (ctx, { code, name }) => {
+  const inv = ctx.db.invite.code.find(code.trim().toUpperCase());
+  if (!inv || inv.uses >= inv.maxUses) throw new SenderError('that invite code is not valid');
+  addMember(ctx, inv.tenantId, ctx.sender, inv.role);
+  ctx.db.invite.code.update({ ...inv, uses: inv.uses + 1 });
+  upsertAccount(ctx, { name: name.trim().slice(0, 48) || undefined, kind: inv.role === 'service' ? 'service' : undefined, activeTenant: inv.tenantId });
+});
+
+// Owners and admins can change roles; nobody can remove or demote the last owner.
+export const setMemberRole = spacetimedb.reducer(
+  { tenantId: t.string(), identity: t.identity(), role: t.string() },
+  (ctx, { tenantId, identity, role }) => {
+    const me = requireRole(ctx, tenantId, MANAGE);
+    if (!ROLES.includes(role)) throw new SenderError(`role must be one of ${ROLES.join(', ')}`);
+    if ((role === 'owner' || role === 'admin') && me.role !== 'owner') throw new SenderError('only an owner grants owner or admin');
+    const m = membership(ctx, tenantId, identity);
+    if (!m) throw new SenderError('not a member');
+    if (m.role === 'owner' && role !== 'owner' && owners(ctx, tenantId) <= 1) throw new SenderError('an organisation needs an owner');
+    ctx.db.member.id.update({ ...m, role });
+  }
+);
+
+// Remove someone (owners and admins), or leave (anyone, for themselves).
+export const removeMember = spacetimedb.reducer({ tenantId: t.string(), identity: t.identity() }, (ctx, { tenantId, identity }) => {
+  if (!identity.equals(ctx.sender)) requireRole(ctx, tenantId, MANAGE);
+  const m = membership(ctx, tenantId, identity);
+  if (!m) return;
+  if (m.role === 'owner' && owners(ctx, tenantId) <= 1) throw new SenderError('an organisation needs an owner');
+  ctx.db.member.id.delete(m.id);
+});
+
+export const setActiveTenant = spacetimedb.reducer({ tenantId: t.string() }, (ctx, { tenantId }) => {
+  if (!membership(ctx, tenantId)) throw new SenderError(`not a member of ${tenantId}`);
+  upsertAccount(ctx, { activeTenant: tenantId });
+});
+
+export const setProfile = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+  upsertAccount(ctx, { name: name.trim().slice(0, 48) });
+});
+
+const TenantRole = t.row('TenantRole', {
+  id: t.string(),
+  name: t.string(),
+  kind: t.string(),
+  visibility: t.string(),
+  role: t.string(),
+});
+
+export const myAccount = spacetimedb.view({ name: 'my_account', public: true }, t.option(account.rowType), ctx => {
+  return ctx.db.account.identity.find(ctx.sender) ?? undefined;
+});
+
+export const myTenant = spacetimedb.view({ name: 'my_tenant', public: true }, t.array(TenantRole), ctx => {
+  const out = [];
+  for (const m of ctx.db.member.identity.filter(ctx.sender)) {
+    const tn = ctx.db.tenant.id.find(m.tenantId);
+    if (tn) out.push({ id: tn.id, name: tn.name, kind: tn.kind, visibility: tn.visibility, role: m.role });
+  }
+  return out;
+});
+
+export const publicTenant = spacetimedb.anonymousView({ name: 'public_tenant', public: true }, t.array(tenant.rowType), ctx => {
+  return [...ctx.db.tenant.iter()].filter(tn => tn.visibility === 'public');
+});
+
+// Owners and admins see their organisations' members and live invite codes.
+function managed(ctx: VCtx) {
+  return [...ctx.db.member.identity.filter(ctx.sender)].filter(m => MANAGE.includes(m.role)).map(m => m.tenantId);
+}
+
+export const myMember = spacetimedb.view({ name: 'my_member', public: true }, t.array(member.rowType), ctx => {
+  return managed(ctx).flatMap(id => [...ctx.db.member.tenantId.filter(id)]);
+});
+
+export const myInvite = spacetimedb.view({ name: 'my_invite', public: true }, t.array(invite.rowType), ctx => {
+  return managed(ctx).flatMap(id => [...ctx.db.invite.tenantId.filter(id)]);
+});
+
+// ------------------------------------------------------------------------------------------- tenant data
+// Loaders and servers write maps, training inputs and the policy registry through these reducers. Each one names the
+// tenant it writes for and needs a member, service, admin or owner role there; writing a row again replaces it.
+
+function requireWriter(ctx: Ctx, tenantId: string) {
+  return requireRole(ctx, tenantId, WRITE);
+}
+
+function own(ctx: Ctx, tenantId: string, existing: { tenant: string } | null | undefined, what: string) {
+  requireWriter(ctx, tenantId);
+  if (existing && existing.tenant !== tenantId) throw new SenderError(`${what} belongs to ${existing.tenant}`);
+}
+
+const CHUNK_F32_MAX = 262_144; // 1 MB of f32 per row, the same bound as capture chunks
+
+export const upsertResort = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), name: t.string(), country: t.string(), lat: t.f64(), lon: t.f64(), osm: t.string(), source: t.string(), meta: t.string() },
+  (ctx, a) => {
+    const old = ctx.db.resort.id.find(a.id);
+    own(ctx, a.tenant, old, `resort ${a.id}`);
+    const row = { ...a, updatedAt: ctx.timestamp };
+    if (old) ctx.db.resort.id.update(row);
+    else ctx.db.resort.insert(row);
+  }
+);
+
+export const upsertCourse = spacetimedb.reducer(
+  {
+    id: t.string(), tenant: t.string(), resortId: t.string(), name: t.string(), activity: t.string(), difficulty: t.string(),
+    lengthM: t.f32(), dropM: t.f32(), meanSlopeDeg: t.f32(), maxSlopeDeg: t.f32(), originLat: t.f64(), originLon: t.f64(),
+    zDatumMsl: t.f32(), line: t.array(LinePoint), fullRun: t.array(LinePoint), gates: t.array(Gate), startPose: t.string(),
+    scene: t.string(), stats: t.string(), source: t.string(), license: t.string(),
+  },
+  (ctx, a) => {
+    const old = ctx.db.course.id.find(a.id);
+    own(ctx, a.tenant, old, `course ${a.id}`);
+    const row = { ...a, updatedAt: ctx.timestamp };
+    if (old) ctx.db.course.id.update(row);
+    else ctx.db.course.insert(row);
+  }
+);
+
+// Declares a heightfield and clears any heights it had; pushTerrainRows then fills it.
+export const putTerrain = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), courseId: t.string(), layer: t.string(), nx: t.u32(), ny: t.u32(), cellM: t.f32(), x0: t.f32(), y0: t.f32(), zMin: t.f32(), zMax: t.f32(), source: t.string(), license: t.string(), meta: t.string() },
+  (ctx, a) => {
+    const old = ctx.db.terrain.id.find(a.id);
+    if (!a.layer) throw new SenderError('name the layer: elevation, canopy, far or tiles');
+    own(ctx, a.tenant, old, `terrain ${a.id}`);
+    if (a.nx === 0 || a.ny === 0) throw new SenderError('nx and ny must be positive');
+    for (const c of [...ctx.db.terrainChunk.terrainId.filter(a.id)]) ctx.db.terrainChunk.id.delete(c.id);
+    const row = { ...a, rows: 0, updatedAt: ctx.timestamp };
+    if (old) ctx.db.terrain.id.update(row);
+    else ctx.db.terrain.insert(row);
+  }
+);
+
+// Whole rows of heights starting at row0. Sending the same row0 again replaces that block.
+export const pushTerrainRows = spacetimedb.reducer(
+  { terrainId: t.string(), row0: t.u32(), heights: t.array(t.f32()) },
+  (ctx, { terrainId, row0, heights }) => {
+    const tr = ctx.db.terrain.id.find(terrainId);
+    if (!tr) throw new SenderError('put the terrain first');
+    requireWriter(ctx, tr.tenant);
+    if (heights.length === 0 || heights.length > CHUNK_F32_MAX || heights.length % tr.nx !== 0) throw new SenderError(`heights must be whole rows of ${tr.nx}, at most ${CHUNK_F32_MAX} values`);
+    const n = heights.length / tr.nx;
+    if (row0 + n > tr.ny) throw new SenderError(`rows ${row0}..${row0 + n} run past ny ${tr.ny}`);
+    let rows = tr.rows + n;
+    for (const c of [...ctx.db.terrainChunk.terrainId.filter(terrainId)]) {
+      if (c.row0 !== row0) continue;
+      rows -= c.heights.length / tr.nx;
+      ctx.db.terrainChunk.id.delete(c.id);
+    }
+    ctx.db.terrainChunk.insert({ id: 0n, terrainId, tenant: tr.tenant, row0, heights });
+    ctx.db.terrain.id.update({ ...tr, rows, updatedAt: ctx.timestamp });
+  }
+);
+
+export const upsertTrailNetwork = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), name: t.string(), place: t.string(), kind: t.string(), centerLat: t.f64(), centerLon: t.f64(), radiusM: t.f32(), ways: t.u32(), lengthKm: t.f32(), areas: t.u32(), sources: t.string(), meta: t.string() },
+  (ctx, a) => {
+    const old = ctx.db.trailNetwork.id.find(a.id);
+    own(ctx, a.tenant, old, `trail network ${a.id}`);
+    const row = { ...a, updatedAt: ctx.timestamp };
+    if (old) ctx.db.trailNetwork.id.update(row);
+    else ctx.db.trailNetwork.insert(row);
+  }
+);
+
+const TrailIn = t.object('TrailIn', {
+  osm: t.string(), name: t.string(), highway: t.string(), surface: t.string(), sacScale: t.string(), area: t.string(),
+  lengthM: t.f32(), climbM: t.f32(), descentM: t.f32(), maxGradeDeg: t.f32(), path: t.array(LatLon), profileStepM: t.f32(),
+  profile: t.array(t.f32()), tags: t.string(),
+});
+
+// A batch of ways for one network, keyed network/osm id so a reload replaces rather than duplicates.
+export const pushTrails = spacetimedb.reducer({ networkId: t.string(), trails: t.array(TrailIn) }, (ctx, { networkId, trails }) => {
+  const net = ctx.db.trailNetwork.id.find(networkId);
+  if (!net) throw new SenderError('upsert the trail network first');
+  requireWriter(ctx, net.tenant);
+  for (const w of trails) {
+    const key = `${networkId}/${w.osm}`;
+    const old = ctx.db.trail.key.find(key);
+    const row = { ...w, id: old?.id ?? 0n, key, network: networkId, tenant: net.tenant };
+    if (old) ctx.db.trail.id.update(row);
+    else ctx.db.trail.insert(row);
+  }
+});
+
+const AreaIn = t.object('AreaIn', {
+  osm: t.string(), name: t.string(), kind: t.string(), ways: t.u32(), lengthM: t.f32(), geometry: t.string(), stats: t.string(),
+});
+
+export const pushAreas = spacetimedb.reducer({ networkId: t.string(), areas: t.array(AreaIn) }, (ctx, { networkId, areas }) => {
+  const net = ctx.db.trailNetwork.id.find(networkId);
+  if (!net) throw new SenderError('upsert the trail network first');
+  requireWriter(ctx, net.tenant);
+  for (const w of areas) {
+    const key = `${networkId}/${w.osm}`;
+    const old = ctx.db.area.key.find(key);
+    const row = { ...w, id: old?.id ?? 0n, key, network: networkId, tenant: net.tenant };
+    if (old) ctx.db.area.id.update(row);
+    else ctx.db.area.insert(row);
+  }
+});
+
+const RECORDING_SOURCES = ['phone', 'game', 'video', 'gopro', 'sim'];
+const RECORDING_ACTIVITIES = ['ski', 'hike', 'climb'];
+
+// Declares a recording (or replaces its description) and clears its frames; pushRecordingChunk then fills it.
+export const putRecording = spacetimedb.reducer(
+  { key: t.string(), tenant: t.string(), source: t.string(), activity: t.string(), ref: t.string(), uri: t.string(), channels: t.array(t.string()), units: t.array(t.string()), rateHz: t.f32(), title: t.string(), license: t.string(), meta: t.string() },
+  (ctx, a) => {
+    const old = ctx.db.recording.key.find(a.key);
+    own(ctx, a.tenant, old, `recording ${a.key}`);
+    if (!a.key || a.key.length > 96) throw new SenderError('key is 1 to 96 characters');
+    if (!RECORDING_SOURCES.includes(a.source)) throw new SenderError(`source must be one of ${RECORDING_SOURCES.join(', ')}`);
+    if (!RECORDING_ACTIVITIES.includes(a.activity)) throw new SenderError(`activity must be one of ${RECORDING_ACTIVITIES.join(', ')}`);
+    if (a.channels.length === 0 || a.channels.length > 512) throw new SenderError('1 to 512 channels');
+    if (a.units.length !== a.channels.length) throw new SenderError('one unit per channel');
+    for (const c of [...ctx.db.recordingChunk.recordingKey.filter(a.key)]) ctx.db.recordingChunk.id.delete(c.id);
+    const row = { ...a, frames: 0n, chunks: 0, writer: ctx.sender, closed: false, startedAt: old?.startedAt ?? ctx.timestamp, updatedAt: ctx.timestamp };
+    if (old) ctx.db.recording.key.update(row);
+    else ctx.db.recording.insert(row);
+  }
+);
+
+// A block of whole frames. Sending the same seq again replaces it, and the counts follow.
+export const pushRecordingChunk = spacetimedb.reducer(
+  { recordingKey: t.string(), seq: t.u32(), t0Ms: t.u64(), tMs: t.array(t.u32()), data: t.array(t.f32()) },
+  (ctx, { recordingKey, seq, t0Ms, tMs, data }) => {
+    const r = ctx.db.recording.key.find(recordingKey);
+    if (!r) throw new SenderError('put the recording first');
+    requireWriter(ctx, r.tenant);
+    if (r.closed) throw new SenderError('recording is closed');
+    const width = r.channels.length;
+    if (data.length === 0 || data.length > CHUNK_F32_MAX || data.length % width !== 0) throw new SenderError(`data must be whole frames of ${width} values, at most ${CHUNK_F32_MAX}`);
+    const n = data.length / width;
+    if (r.rateHz <= 0 && tMs.length !== n) throw new SenderError('irregular recording: one tMs per frame');
+    if (r.rateHz > 0 && tMs.length !== 0) throw new SenderError('regular recording: leave tMs empty');
+    let frames = BigInt(n), chunks = 1;
+    for (const old of [...ctx.db.recordingChunk.recordingKey.filter(recordingKey)]) {
+      if (old.seq !== seq) continue;
+      frames -= BigInt(old.data.length / width); chunks -= 1;
+      ctx.db.recordingChunk.id.delete(old.id);
+    }
+    ctx.db.recordingChunk.insert({ id: 0n, recordingKey, tenant: r.tenant, seq, t0Ms, tMs, data });
+    ctx.db.recording.key.update({ ...r, frames: r.frames + frames, chunks: r.chunks + chunks, updatedAt: ctx.timestamp });
+  }
+);
+
+export const closeRecording = spacetimedb.reducer({ key: t.string() }, (ctx, { key }) => {
+  const r = ctx.db.recording.key.find(key);
+  if (!r) return;
+  requireWriter(ctx, r.tenant);
+  if (!r.closed) ctx.db.recording.key.update({ ...r, closed: true, updatedAt: ctx.timestamp });
+});
+
+const SegmentIn = t.object('SegmentIn', { key: t.string(), kind: t.string(), t0Ms: t.u64(), t1Ms: t.u64(), label: t.string(), meta: t.string() });
+
+export const pushSegments = spacetimedb.reducer({ recordingKey: t.string(), segments: t.array(SegmentIn) }, (ctx, { recordingKey, segments }) => {
+  const r = ctx.db.recording.key.find(recordingKey);
+  if (!r) throw new SenderError('put the recording first');
+  requireWriter(ctx, r.tenant);
+  for (const sg of segments) {
+    const key = `${recordingKey}/${sg.key}`;
+    const old = ctx.db.segment.key.find(key);
+    const row = { ...sg, id: old?.id ?? 0n, key, recordingKey, tenant: r.tenant };
+    if (old) ctx.db.segment.id.update(row);
+    else ctx.db.segment.insert(row);
+  }
+});
+
+export const upsertReferencePose = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), activity: t.string(), phase: t.string(), robot: t.string(), joints: t.array(t.string()), values: t.array(t.f32()), frames: t.u32(), human: t.string(), sources: t.string() },
+  (ctx, a) => {
+    const old = ctx.db.referencePose.id.find(a.id);
+    own(ctx, a.tenant, old, `reference pose ${a.id}`);
+    if (a.joints.length !== a.values.length) throw new SenderError('one value per joint');
+    const row = { ...a, updatedAt: ctx.timestamp };
+    if (old) ctx.db.referencePose.id.update(row);
+    else ctx.db.referencePose.insert(row);
+  }
+);
+
+export const upsertTrainingSet = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), name: t.string(), activity: t.string(), robot: t.string(), description: t.string(), courses: t.array(t.string()), terrains: t.array(t.string()), recordings: t.array(t.string()), referencePoses: t.array(t.string()), meta: t.string() },
+  (ctx, a) => {
+    const old = ctx.db.trainingSet.id.find(a.id);
+    own(ctx, a.tenant, old, `training set ${a.id}`);
+    const row = { ...a, updatedAt: ctx.timestamp };
+    if (old) ctx.db.trainingSet.id.update(row);
+    else ctx.db.trainingSet.insert(row);
+  }
+);
+
+export const upsertPolicy = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), name: t.string(), robot: t.string(), skill: t.string(), obsDim: t.u32(), actionDim: t.u32(), controlHz: t.f32(), runtime: t.string(), endpoint: t.string(), trainingSet: t.string(), benchmark: t.string(), spec: t.string() },
+  (ctx, a) => {
+    const old = ctx.db.policy.id.find(a.id);
+    own(ctx, a.tenant, old, `policy ${a.id}`);
+    const row = { ...a, updatedAt: ctx.timestamp };
+    if (old) ctx.db.policy.id.update(row);
+    else ctx.db.policy.insert(row);
+  }
+);
+
+export const upsertTrainRun = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), policyId: t.string(), trainingSet: t.string(), hardware: t.string(), status: t.string(), iterations: t.u32(), checkpoint: t.string(), metrics: t.string(), benchmark: t.string(), notes: t.string(), startedAt: t.timestamp() },
+  (ctx, a) => {
+    const old = ctx.db.trainRun.id.find(a.id);
+    own(ctx, a.tenant, old, `train run ${a.id}`);
+    const row = { ...a, updatedAt: ctx.timestamp };
+    if (old) ctx.db.trainRun.id.update(row);
+    else ctx.db.trainRun.insert(row);
+  }
+);
+
+// Declares a point set and clears its points; pushPoints then fills it.
+export const putPointSet = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), courseId: t.string(), kind: t.string(), columns: t.array(t.string()), units: t.array(t.string()), source: t.string(), license: t.string(), meta: t.string() },
+  (ctx, a) => {
+    const old = ctx.db.pointSet.id.find(a.id);
+    own(ctx, a.tenant, old, `point set ${a.id}`);
+    if (a.columns.length === 0 || a.units.length !== a.columns.length) throw new SenderError('one unit per column');
+    for (const c of [...ctx.db.pointChunk.setId.filter(a.id)]) ctx.db.pointChunk.id.delete(c.id);
+    const row = { ...a, count: 0, updatedAt: ctx.timestamp };
+    if (old) ctx.db.pointSet.id.update(row);
+    else ctx.db.pointSet.insert(row);
+  }
+);
+
+export const pushPoints = spacetimedb.reducer({ setId: t.string(), seq: t.u32(), data: t.array(t.f32()) }, (ctx, { setId, seq, data }) => {
+  const ps = ctx.db.pointSet.id.find(setId);
+  if (!ps) throw new SenderError('put the point set first');
+  requireWriter(ctx, ps.tenant);
+  const w = ps.columns.length;
+  if (data.length === 0 || data.length > CHUNK_F32_MAX || data.length % w !== 0) throw new SenderError(`data must be whole points of ${w} values, at most ${CHUNK_F32_MAX}`);
+  let count = ps.count + data.length / w;
+  for (const c of [...ctx.db.pointChunk.setId.filter(setId)]) {
+    if (c.seq !== seq) continue;
+    count -= c.data.length / w;
+    ctx.db.pointChunk.id.delete(c.id);
+  }
+  ctx.db.pointChunk.insert({ id: 0n, setId, tenant: ps.tenant, seq, data });
+  ctx.db.pointSet.id.update({ ...ps, count, updatedAt: ctx.timestamp });
+});
+
+export const upsertEvaluation = spacetimedb.reducer(
+  { id: t.string(), tenant: t.string(), policyId: t.string(), runId: t.string(), checkpoint: t.string(), kind: t.string(), courseId: t.string(), summary: t.string(), detail: t.string(), at: t.timestamp() },
+  (ctx, a) => {
+    const old = ctx.db.evaluation.id.find(a.id);
+    own(ctx, a.tenant, old, `evaluation ${a.id}`);
+    if (old) ctx.db.evaluation.id.update(a);
+    else ctx.db.evaluation.insert(a);
+  }
+);
+
+// Removes one item and everything that hangs off it (a course's terrain layers and point sets, a network's trails
+// and areas, a recording's chunks and segments). Any writer of the owning organisation can do it.
+export const deleteItem = spacetimedb.reducer({ kind: t.string(), id: t.string() }, (ctx, { kind, id }) => {
+  const dropTerrain = (tid: string) => {
+    for (const c of [...ctx.db.terrainChunk.terrainId.filter(tid)]) ctx.db.terrainChunk.id.delete(c.id);
+    ctx.db.terrain.id.delete(tid);
+  };
+  const dropPoints = (sid: string) => {
+    for (const c of [...ctx.db.pointChunk.setId.filter(sid)]) ctx.db.pointChunk.id.delete(c.id);
+    ctx.db.pointSet.id.delete(sid);
+  };
+  const check = (row: { tenant: string } | null) => {
+    if (!row) throw new SenderError(`no ${kind} ${id}`);
+    requireWriter(ctx, row.tenant);
+  };
+  switch (kind) {
+    case 'resort': check(ctx.db.resort.id.find(id)); ctx.db.resort.id.delete(id); break;
+    case 'course':
+      check(ctx.db.course.id.find(id));
+      for (const tr of [...ctx.db.terrain.courseId.filter(id)]) dropTerrain(tr.id);
+      for (const ps of [...ctx.db.pointSet.courseId.filter(id)]) dropPoints(ps.id);
+      ctx.db.course.id.delete(id);
+      break;
+    case 'terrain': check(ctx.db.terrain.id.find(id)); dropTerrain(id); break;
+    case 'point_set': check(ctx.db.pointSet.id.find(id)); dropPoints(id); break;
+    case 'trail_network':
+      check(ctx.db.trailNetwork.id.find(id));
+      for (const w of [...ctx.db.trail.network.filter(id)]) ctx.db.trail.id.delete(w.id);
+      for (const w of [...ctx.db.area.network.filter(id)]) ctx.db.area.id.delete(w.id);
+      ctx.db.trailNetwork.id.delete(id);
+      break;
+    case 'recording':
+      check(ctx.db.recording.key.find(id));
+      for (const c of [...ctx.db.recordingChunk.recordingKey.filter(id)]) ctx.db.recordingChunk.id.delete(c.id);
+      for (const sg of [...ctx.db.segment.recordingKey.filter(id)]) ctx.db.segment.id.delete(sg.id);
+      ctx.db.recording.key.delete(id);
+      break;
+    case 'reference_pose': check(ctx.db.referencePose.id.find(id)); ctx.db.referencePose.id.delete(id); break;
+    case 'training_set': check(ctx.db.trainingSet.id.find(id)); ctx.db.trainingSet.id.delete(id); break;
+    case 'policy': check(ctx.db.policy.id.find(id)); ctx.db.policy.id.delete(id); break;
+    case 'train_run': check(ctx.db.trainRun.id.find(id)); ctx.db.trainRun.id.delete(id); break;
+    case 'evaluation': check(ctx.db.evaluation.id.find(id)); ctx.db.evaluation.id.delete(id); break;
+    default: throw new SenderError(`cannot delete a ${kind}`);
+  }
+});
+
+// ------------------------------------------------------------------------------------------------ views
+// public_<table> serves the rows of public tenants, the same for every caller. my_<table> serves the rows of every
+// organisation the caller belongs to, whatever their role. Both are semijoins on indexed columns (tenant.id or
+// member.tenant_id against the row's tenant), so SpacetimeDB keeps them up to date incrementally instead of rerunning
+// them over every chunk when one row changes.
+
+export const publicResortView = spacetimedb.anonymousView({ name: 'public_resort', public: true }, t.array(resort.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.resort, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myResortView = spacetimedb.view({ name: 'my_resort', public: true }, t.array(resort.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.resort, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicCourseView = spacetimedb.anonymousView({ name: 'public_course', public: true }, t.array(course.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.course, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myCourseView = spacetimedb.view({ name: 'my_course', public: true }, t.array(course.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.course, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicTerrainView = spacetimedb.anonymousView({ name: 'public_terrain', public: true }, t.array(terrain.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.terrain, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myTerrainView = spacetimedb.view({ name: 'my_terrain', public: true }, t.array(terrain.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.terrain, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicTerrainChunkView = spacetimedb.anonymousView({ name: 'public_terrain_chunk', public: true }, t.array(terrainChunk.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.terrainChunk, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myTerrainChunkView = spacetimedb.view({ name: 'my_terrain_chunk', public: true }, t.array(terrainChunk.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.terrainChunk, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicTrailNetworkView = spacetimedb.anonymousView({ name: 'public_trail_network', public: true }, t.array(trailNetwork.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.trailNetwork, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myTrailNetworkView = spacetimedb.view({ name: 'my_trail_network', public: true }, t.array(trailNetwork.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.trailNetwork, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicTrailView = spacetimedb.anonymousView({ name: 'public_trail', public: true }, t.array(trail.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.trail, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myTrailView = spacetimedb.view({ name: 'my_trail', public: true }, t.array(trail.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.trail, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicAreaView = spacetimedb.anonymousView({ name: 'public_area', public: true }, t.array(area.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.area, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myAreaView = spacetimedb.view({ name: 'my_area', public: true }, t.array(area.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.area, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicRecordingView = spacetimedb.anonymousView({ name: 'public_recording', public: true }, t.array(recording.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.recording, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myRecordingView = spacetimedb.view({ name: 'my_recording', public: true }, t.array(recording.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.recording, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicRecordingChunkView = spacetimedb.anonymousView({ name: 'public_recording_chunk', public: true }, t.array(recordingChunk.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.recordingChunk, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myRecordingChunkView = spacetimedb.view({ name: 'my_recording_chunk', public: true }, t.array(recordingChunk.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.recordingChunk, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicSegmentView = spacetimedb.anonymousView({ name: 'public_segment', public: true }, t.array(segment.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.segment, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const mySegmentView = spacetimedb.view({ name: 'my_segment', public: true }, t.array(segment.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.segment, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicReferencePoseView = spacetimedb.anonymousView({ name: 'public_reference_pose', public: true }, t.array(referencePose.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.referencePose, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myReferencePoseView = spacetimedb.view({ name: 'my_reference_pose', public: true }, t.array(referencePose.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.referencePose, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicTrainingSetView = spacetimedb.anonymousView({ name: 'public_training_set', public: true }, t.array(trainingSet.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.trainingSet, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myTrainingSetView = spacetimedb.view({ name: 'my_training_set', public: true }, t.array(trainingSet.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.trainingSet, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicPolicyView = spacetimedb.anonymousView({ name: 'public_policy', public: true }, t.array(policy.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.policy, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myPolicyView = spacetimedb.view({ name: 'my_policy', public: true }, t.array(policy.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.policy, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicTrainRunView = spacetimedb.anonymousView({ name: 'public_train_run', public: true }, t.array(trainRun.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.trainRun, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myTrainRunView = spacetimedb.view({ name: 'my_train_run', public: true }, t.array(trainRun.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.trainRun, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicPointSetView = spacetimedb.anonymousView({ name: 'public_point_set', public: true }, t.array(pointSet.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.pointSet, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myPointSetView = spacetimedb.view({ name: 'my_point_set', public: true }, t.array(pointSet.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.pointSet, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicPointChunkView = spacetimedb.anonymousView({ name: 'public_point_chunk', public: true }, t.array(pointChunk.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.pointChunk, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myPointChunkView = spacetimedb.view({ name: 'my_point_chunk', public: true }, t.array(pointChunk.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.pointChunk, (m, r) => m.tenantId.eq(r.tenant))
+);
+
+export const publicEvaluationView = spacetimedb.anonymousView({ name: 'public_evaluation', public: true }, t.array(evaluation.rowType), ctx =>
+  ctx.from.tenant.where(tn => tn.visibility.eq('public')).rightSemijoin(ctx.from.evaluation, (tn, r) => tn.id.eq(r.tenant))
+);
+
+export const myEvaluationView = spacetimedb.view({ name: 'my_evaluation', public: true }, t.array(evaluation.rowType), ctx =>
+  ctx.from.member.where(m => m.identity.eq(ctx.sender)).rightSemijoin(ctx.from.evaluation, (m, r) => m.tenantId.eq(r.tenant))
+);

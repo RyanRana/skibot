@@ -10,6 +10,42 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Account = __t.object("Account", {
+  identity: __t.identity(),
+  name: __t.string(),
+  kind: __t.string(),
+  activeTenant: __t.string(),
+  createdAt: __t.timestamp(),
+  lastSeen: __t.timestamp(),
+});
+export type Account = __Infer<typeof Account>;
+
+export const Area = __t.object("Area", {
+  id: __t.u64(),
+  key: __t.string(),
+  network: __t.string(),
+  tenant: __t.string(),
+  osm: __t.string(),
+  name: __t.string(),
+  kind: __t.string(),
+  ways: __t.u32(),
+  lengthM: __t.f32(),
+  geometry: __t.string(),
+  stats: __t.string(),
+});
+export type Area = __Infer<typeof Area>;
+
+export const AreaIn = __t.object("AreaIn", {
+  osm: __t.string(),
+  name: __t.string(),
+  kind: __t.string(),
+  ways: __t.u32(),
+  lengthM: __t.f32(),
+  geometry: __t.string(),
+  stats: __t.string(),
+});
+export type AreaIn = __Infer<typeof AreaIn>;
+
 export const Capture = __t.object("Capture", {
   id: __t.u64(),
   key: __t.string(),
@@ -67,6 +103,38 @@ export const Cheer = __t.object("Cheer", {
 });
 export type Cheer = __Infer<typeof Cheer>;
 
+export const Course = __t.object("Course", {
+  id: __t.string(),
+  tenant: __t.string(),
+  resortId: __t.string(),
+  name: __t.string(),
+  activity: __t.string(),
+  difficulty: __t.string(),
+  lengthM: __t.f32(),
+  dropM: __t.f32(),
+  meanSlopeDeg: __t.f32(),
+  maxSlopeDeg: __t.f32(),
+  originLat: __t.f64(),
+  originLon: __t.f64(),
+  zDatumMsl: __t.f32(),
+  get line() {
+    return __t.array(LinePoint);
+  },
+  get fullRun() {
+    return __t.array(LinePoint);
+  },
+  get gates() {
+    return __t.array(Gate);
+  },
+  startPose: __t.string(),
+  scene: __t.string(),
+  stats: __t.string(),
+  source: __t.string(),
+  license: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type Course = __Infer<typeof Course>;
+
 export const DatasetStats = __t.object("DatasetStats", {
   id: __t.u8(),
   samples: __t.u64(),
@@ -76,6 +144,20 @@ export const DatasetStats = __t.object("DatasetStats", {
 });
 export type DatasetStats = __Infer<typeof DatasetStats>;
 
+export const Evaluation = __t.object("Evaluation", {
+  id: __t.string(),
+  tenant: __t.string(),
+  policyId: __t.string(),
+  runId: __t.string(),
+  checkpoint: __t.string(),
+  kind: __t.string(),
+  courseId: __t.string(),
+  summary: __t.string(),
+  detail: __t.string(),
+  at: __t.timestamp(),
+});
+export type Evaluation = __Infer<typeof Evaluation>;
+
 export const Feed = __t.object("Feed", {
   id: __t.u64(),
   kind: __t.string(),
@@ -83,6 +165,20 @@ export const Feed = __t.object("Feed", {
   at: __t.timestamp(),
 });
 export type Feed = __Infer<typeof Feed>;
+
+export const Gate = __t.object("Gate", {
+  s: __t.f32(),
+  side: __t.string(),
+  color: __t.string(),
+  turn: __t.string(),
+  turnX: __t.f32(),
+  turnY: __t.f32(),
+  turnZ: __t.f32(),
+  outerX: __t.f32(),
+  outerY: __t.f32(),
+  outerZ: __t.f32(),
+});
+export type Gate = __Infer<typeof Gate>;
 
 export const Hike = __t.object("Hike", {
   id: __t.u64(),
@@ -145,6 +241,104 @@ export const HikeWriter = __t.object("HikeWriter", {
 });
 export type HikeWriter = __Infer<typeof HikeWriter>;
 
+export const Invite = __t.object("Invite", {
+  code: __t.string(),
+  tenantId: __t.string(),
+  role: __t.string(),
+  maxUses: __t.u32(),
+  uses: __t.u32(),
+  createdBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type Invite = __Infer<typeof Invite>;
+
+export const LatLon = __t.object("LatLon", {
+  lat: __t.f64(),
+  lon: __t.f64(),
+});
+export type LatLon = __Infer<typeof LatLon>;
+
+export const LinePoint = __t.object("LinePoint", {
+  x: __t.f32(),
+  y: __t.f32(),
+  z: __t.f32(),
+  s: __t.f32(),
+});
+export type LinePoint = __Infer<typeof LinePoint>;
+
+export const Member = __t.object("Member", {
+  id: __t.u64(),
+  tenantId: __t.string(),
+  identity: __t.identity(),
+  role: __t.string(),
+  addedBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type Member = __Infer<typeof Member>;
+
+export const MyAccount = __t.object("MyAccount", {});
+export type MyAccount = __Infer<typeof MyAccount>;
+
+export const MyAreaView = __t.object("MyAreaView", {});
+export type MyAreaView = __Infer<typeof MyAreaView>;
+
+export const MyCourseView = __t.object("MyCourseView", {});
+export type MyCourseView = __Infer<typeof MyCourseView>;
+
+export const MyEvaluationView = __t.object("MyEvaluationView", {});
+export type MyEvaluationView = __Infer<typeof MyEvaluationView>;
+
+export const MyInvite = __t.object("MyInvite", {});
+export type MyInvite = __Infer<typeof MyInvite>;
+
+export const MyMember = __t.object("MyMember", {});
+export type MyMember = __Infer<typeof MyMember>;
+
+export const MyPointChunkView = __t.object("MyPointChunkView", {});
+export type MyPointChunkView = __Infer<typeof MyPointChunkView>;
+
+export const MyPointSetView = __t.object("MyPointSetView", {});
+export type MyPointSetView = __Infer<typeof MyPointSetView>;
+
+export const MyPolicyView = __t.object("MyPolicyView", {});
+export type MyPolicyView = __Infer<typeof MyPolicyView>;
+
+export const MyRecordingChunkView = __t.object("MyRecordingChunkView", {});
+export type MyRecordingChunkView = __Infer<typeof MyRecordingChunkView>;
+
+export const MyRecordingView = __t.object("MyRecordingView", {});
+export type MyRecordingView = __Infer<typeof MyRecordingView>;
+
+export const MyReferencePoseView = __t.object("MyReferencePoseView", {});
+export type MyReferencePoseView = __Infer<typeof MyReferencePoseView>;
+
+export const MyResortView = __t.object("MyResortView", {});
+export type MyResortView = __Infer<typeof MyResortView>;
+
+export const MySegmentView = __t.object("MySegmentView", {});
+export type MySegmentView = __Infer<typeof MySegmentView>;
+
+export const MyTenant = __t.object("MyTenant", {});
+export type MyTenant = __Infer<typeof MyTenant>;
+
+export const MyTerrainChunkView = __t.object("MyTerrainChunkView", {});
+export type MyTerrainChunkView = __Infer<typeof MyTerrainChunkView>;
+
+export const MyTerrainView = __t.object("MyTerrainView", {});
+export type MyTerrainView = __Infer<typeof MyTerrainView>;
+
+export const MyTrailNetworkView = __t.object("MyTrailNetworkView", {});
+export type MyTrailNetworkView = __Infer<typeof MyTrailNetworkView>;
+
+export const MyTrailView = __t.object("MyTrailView", {});
+export type MyTrailView = __Infer<typeof MyTrailView>;
+
+export const MyTrainRunView = __t.object("MyTrainRunView", {});
+export type MyTrainRunView = __Infer<typeof MyTrainRunView>;
+
+export const MyTrainingSetView = __t.object("MyTrainingSetView", {});
+export type MyTrainingSetView = __Infer<typeof MyTrainingSetView>;
+
 export const Outbox = __t.object("Outbox", {
   id: __t.u64(),
   joinCode: __t.string(),
@@ -155,6 +349,12 @@ export const Outbox = __t.object("Outbox", {
   createdAt: __t.timestamp(),
 });
 export type Outbox = __Infer<typeof Outbox>;
+
+export const PlatformAdmin = __t.object("PlatformAdmin", {
+  id: __t.u8(),
+  admin: __t.identity(),
+});
+export type PlatformAdmin = __Infer<typeof PlatformAdmin>;
 
 export const Player = __t.object("Player", {
   identity: __t.identity(),
@@ -168,6 +368,48 @@ export const Player = __t.object("Player", {
   lastSeen: __t.timestamp(),
 });
 export type Player = __Infer<typeof Player>;
+
+export const PointChunk = __t.object("PointChunk", {
+  id: __t.u64(),
+  setId: __t.string(),
+  tenant: __t.string(),
+  seq: __t.u32(),
+  data: __t.array(__t.f32()),
+});
+export type PointChunk = __Infer<typeof PointChunk>;
+
+export const PointSet = __t.object("PointSet", {
+  id: __t.string(),
+  tenant: __t.string(),
+  courseId: __t.string(),
+  kind: __t.string(),
+  columns: __t.array(__t.string()),
+  units: __t.array(__t.string()),
+  count: __t.u32(),
+  source: __t.string(),
+  license: __t.string(),
+  meta: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type PointSet = __Infer<typeof PointSet>;
+
+export const Policy = __t.object("Policy", {
+  id: __t.string(),
+  tenant: __t.string(),
+  name: __t.string(),
+  robot: __t.string(),
+  skill: __t.string(),
+  obsDim: __t.u32(),
+  actionDim: __t.u32(),
+  controlHz: __t.f32(),
+  runtime: __t.string(),
+  endpoint: __t.string(),
+  trainingSet: __t.string(),
+  benchmark: __t.string(),
+  spec: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type Policy = __Infer<typeof Policy>;
 
 export const PoseSample = __t.object("PoseSample", {
   tMs: __t.u32(),
@@ -183,6 +425,122 @@ export const PoseSample = __t.object("PoseSample", {
   slopeDeg: __t.f32(),
 });
 export type PoseSample = __Infer<typeof PoseSample>;
+
+export const PublicAreaView = __t.object("PublicAreaView", {});
+export type PublicAreaView = __Infer<typeof PublicAreaView>;
+
+export const PublicCourseView = __t.object("PublicCourseView", {});
+export type PublicCourseView = __Infer<typeof PublicCourseView>;
+
+export const PublicEvaluationView = __t.object("PublicEvaluationView", {});
+export type PublicEvaluationView = __Infer<typeof PublicEvaluationView>;
+
+export const PublicPointChunkView = __t.object("PublicPointChunkView", {});
+export type PublicPointChunkView = __Infer<typeof PublicPointChunkView>;
+
+export const PublicPointSetView = __t.object("PublicPointSetView", {});
+export type PublicPointSetView = __Infer<typeof PublicPointSetView>;
+
+export const PublicPolicyView = __t.object("PublicPolicyView", {});
+export type PublicPolicyView = __Infer<typeof PublicPolicyView>;
+
+export const PublicRecordingChunkView = __t.object("PublicRecordingChunkView", {});
+export type PublicRecordingChunkView = __Infer<typeof PublicRecordingChunkView>;
+
+export const PublicRecordingView = __t.object("PublicRecordingView", {});
+export type PublicRecordingView = __Infer<typeof PublicRecordingView>;
+
+export const PublicReferencePoseView = __t.object("PublicReferencePoseView", {});
+export type PublicReferencePoseView = __Infer<typeof PublicReferencePoseView>;
+
+export const PublicResortView = __t.object("PublicResortView", {});
+export type PublicResortView = __Infer<typeof PublicResortView>;
+
+export const PublicSegmentView = __t.object("PublicSegmentView", {});
+export type PublicSegmentView = __Infer<typeof PublicSegmentView>;
+
+export const PublicTenant = __t.object("PublicTenant", {});
+export type PublicTenant = __Infer<typeof PublicTenant>;
+
+export const PublicTerrainChunkView = __t.object("PublicTerrainChunkView", {});
+export type PublicTerrainChunkView = __Infer<typeof PublicTerrainChunkView>;
+
+export const PublicTerrainView = __t.object("PublicTerrainView", {});
+export type PublicTerrainView = __Infer<typeof PublicTerrainView>;
+
+export const PublicTrailNetworkView = __t.object("PublicTrailNetworkView", {});
+export type PublicTrailNetworkView = __Infer<typeof PublicTrailNetworkView>;
+
+export const PublicTrailView = __t.object("PublicTrailView", {});
+export type PublicTrailView = __Infer<typeof PublicTrailView>;
+
+export const PublicTrainRunView = __t.object("PublicTrainRunView", {});
+export type PublicTrainRunView = __Infer<typeof PublicTrainRunView>;
+
+export const PublicTrainingSetView = __t.object("PublicTrainingSetView", {});
+export type PublicTrainingSetView = __Infer<typeof PublicTrainingSetView>;
+
+export const Recording = __t.object("Recording", {
+  key: __t.string(),
+  tenant: __t.string(),
+  source: __t.string(),
+  activity: __t.string(),
+  ref: __t.string(),
+  uri: __t.string(),
+  channels: __t.array(__t.string()),
+  units: __t.array(__t.string()),
+  rateHz: __t.f32(),
+  frames: __t.u64(),
+  chunks: __t.u32(),
+  title: __t.string(),
+  license: __t.string(),
+  meta: __t.string(),
+  writer: __t.identity(),
+  closed: __t.bool(),
+  startedAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type Recording = __Infer<typeof Recording>;
+
+export const RecordingChunk = __t.object("RecordingChunk", {
+  id: __t.u64(),
+  recordingKey: __t.string(),
+  tenant: __t.string(),
+  seq: __t.u32(),
+  t0Ms: __t.u64(),
+  tMs: __t.array(__t.u32()),
+  data: __t.array(__t.f32()),
+});
+export type RecordingChunk = __Infer<typeof RecordingChunk>;
+
+export const ReferencePose = __t.object("ReferencePose", {
+  id: __t.string(),
+  tenant: __t.string(),
+  activity: __t.string(),
+  phase: __t.string(),
+  robot: __t.string(),
+  joints: __t.array(__t.string()),
+  values: __t.array(__t.f32()),
+  frames: __t.u32(),
+  human: __t.string(),
+  sources: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type ReferencePose = __Infer<typeof ReferencePose>;
+
+export const Resort = __t.object("Resort", {
+  id: __t.string(),
+  tenant: __t.string(),
+  name: __t.string(),
+  country: __t.string(),
+  lat: __t.f64(),
+  lon: __t.f64(),
+  osm: __t.string(),
+  source: __t.string(),
+  meta: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type Resort = __Infer<typeof Resort>;
 
 export const Run = __t.object("Run", {
   id: __t.u64(),
@@ -210,6 +568,29 @@ export const RunPhoto = __t.object("RunPhoto", {
 });
 export type RunPhoto = __Infer<typeof RunPhoto>;
 
+export const Segment = __t.object("Segment", {
+  id: __t.u64(),
+  key: __t.string(),
+  recordingKey: __t.string(),
+  tenant: __t.string(),
+  kind: __t.string(),
+  t0Ms: __t.u64(),
+  t1Ms: __t.u64(),
+  label: __t.string(),
+  meta: __t.string(),
+});
+export type Segment = __Infer<typeof Segment>;
+
+export const SegmentIn = __t.object("SegmentIn", {
+  key: __t.string(),
+  kind: __t.string(),
+  t0Ms: __t.u64(),
+  t1Ms: __t.u64(),
+  label: __t.string(),
+  meta: __t.string(),
+});
+export type SegmentIn = __Infer<typeof SegmentIn>;
+
 export const Skier = __t.object("Skier", {
   identity: __t.identity(),
   name: __t.string(),
@@ -229,6 +610,54 @@ export const Skier = __t.object("Skier", {
 });
 export type Skier = __Infer<typeof Skier>;
 
+export const Tenant = __t.object("Tenant", {
+  id: __t.string(),
+  name: __t.string(),
+  kind: __t.string(),
+  visibility: __t.string(),
+  createdBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type Tenant = __Infer<typeof Tenant>;
+
+export const TenantRole = __t.object("TenantRole", {
+  id: __t.string(),
+  name: __t.string(),
+  kind: __t.string(),
+  visibility: __t.string(),
+  role: __t.string(),
+});
+export type TenantRole = __Infer<typeof TenantRole>;
+
+export const Terrain = __t.object("Terrain", {
+  id: __t.string(),
+  tenant: __t.string(),
+  courseId: __t.string(),
+  layer: __t.string(),
+  nx: __t.u32(),
+  ny: __t.u32(),
+  cellM: __t.f32(),
+  x0: __t.f32(),
+  y0: __t.f32(),
+  zMin: __t.f32(),
+  zMax: __t.f32(),
+  rows: __t.u32(),
+  source: __t.string(),
+  license: __t.string(),
+  meta: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type Terrain = __Infer<typeof Terrain>;
+
+export const TerrainChunk = __t.object("TerrainChunk", {
+  id: __t.u64(),
+  terrainId: __t.string(),
+  tenant: __t.string(),
+  row0: __t.u32(),
+  heights: __t.array(__t.f32()),
+});
+export type TerrainChunk = __Infer<typeof TerrainChunk>;
+
 export const TickTimer = __t.object("TickTimer", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
@@ -244,4 +673,99 @@ export const TraceChunk = __t.object("TraceChunk", {
   },
 });
 export type TraceChunk = __Infer<typeof TraceChunk>;
+
+export const Trail = __t.object("Trail", {
+  id: __t.u64(),
+  key: __t.string(),
+  network: __t.string(),
+  tenant: __t.string(),
+  osm: __t.string(),
+  name: __t.string(),
+  highway: __t.string(),
+  surface: __t.string(),
+  sacScale: __t.string(),
+  area: __t.string(),
+  lengthM: __t.f32(),
+  climbM: __t.f32(),
+  descentM: __t.f32(),
+  maxGradeDeg: __t.f32(),
+  get path() {
+    return __t.array(LatLon);
+  },
+  profileStepM: __t.f32(),
+  profile: __t.array(__t.f32()),
+  tags: __t.string(),
+});
+export type Trail = __Infer<typeof Trail>;
+
+export const TrailIn = __t.object("TrailIn", {
+  osm: __t.string(),
+  name: __t.string(),
+  highway: __t.string(),
+  surface: __t.string(),
+  sacScale: __t.string(),
+  area: __t.string(),
+  lengthM: __t.f32(),
+  climbM: __t.f32(),
+  descentM: __t.f32(),
+  maxGradeDeg: __t.f32(),
+  get path() {
+    return __t.array(LatLon);
+  },
+  profileStepM: __t.f32(),
+  profile: __t.array(__t.f32()),
+  tags: __t.string(),
+});
+export type TrailIn = __Infer<typeof TrailIn>;
+
+export const TrailNetwork = __t.object("TrailNetwork", {
+  id: __t.string(),
+  tenant: __t.string(),
+  name: __t.string(),
+  place: __t.string(),
+  kind: __t.string(),
+  centerLat: __t.f64(),
+  centerLon: __t.f64(),
+  radiusM: __t.f32(),
+  ways: __t.u32(),
+  lengthKm: __t.f32(),
+  areas: __t.u32(),
+  sources: __t.string(),
+  meta: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type TrailNetwork = __Infer<typeof TrailNetwork>;
+
+export const TrainRun = __t.object("TrainRun", {
+  id: __t.string(),
+  tenant: __t.string(),
+  policyId: __t.string(),
+  trainingSet: __t.string(),
+  hardware: __t.string(),
+  status: __t.string(),
+  iterations: __t.u32(),
+  checkpoint: __t.string(),
+  metrics: __t.string(),
+  benchmark: __t.string(),
+  notes: __t.string(),
+  startedAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type TrainRun = __Infer<typeof TrainRun>;
+
+export const TrainingSet = __t.object("TrainingSet", {
+  id: __t.string(),
+  tenant: __t.string(),
+  name: __t.string(),
+  activity: __t.string(),
+  robot: __t.string(),
+  description: __t.string(),
+  courses: __t.array(__t.string()),
+  terrains: __t.array(__t.string()),
+  recordings: __t.array(__t.string()),
+  referencePoses: __t.array(__t.string()),
+  meta: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type TrainingSet = __Infer<typeof TrainingSet>;
 

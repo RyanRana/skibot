@@ -35,23 +35,52 @@ import {
 
 // Import all reducer arg schemas
 import ClaimHikeWriterReducer from "./claim_hike_writer_reducer";
+import ClaimPlatformAdminReducer from "./claim_platform_admin_reducer";
 import CloseCaptureReducer from "./close_capture_reducer";
+import CloseRecordingReducer from "./close_recording_reducer";
 import CreateChallengeReducer from "./create_challenge_reducer";
+import CreateInviteReducer from "./create_invite_reducer";
+import CreateTenantReducer from "./create_tenant_reducer";
 import DeleteHikesReducer from "./delete_hikes_reducer";
+import DeleteItemReducer from "./delete_item_reducer";
 import FinishRunReducer from "./finish_run_reducer";
 import JoinReducer from "./join_reducer";
 import LabelHikeReducer from "./label_hike_reducer";
 import LinkCodeReducer from "./link_code_reducer";
 import MarkSentReducer from "./mark_sent_reducer";
 import OpenCaptureReducer from "./open_capture_reducer";
+import PushAreasReducer from "./push_areas_reducer";
 import PushCaptureChunkReducer from "./push_capture_chunk_reducer";
 import PushHikeChunkReducer from "./push_hike_chunk_reducer";
 import PushPhotoReducer from "./push_photo_reducer";
+import PushPointsReducer from "./push_points_reducer";
+import PushRecordingChunkReducer from "./push_recording_chunk_reducer";
+import PushSegmentsReducer from "./push_segments_reducer";
+import PushTerrainRowsReducer from "./push_terrain_rows_reducer";
 import PushTraceReducer from "./push_trace_reducer";
+import PushTrailsReducer from "./push_trails_reducer";
+import PutPointSetReducer from "./put_point_set_reducer";
+import PutRecordingReducer from "./put_recording_reducer";
+import PutTerrainReducer from "./put_terrain_reducer";
 import RecordHikeReducer from "./record_hike_reducer";
+import RedeemInviteReducer from "./redeem_invite_reducer";
+import RemoveMemberReducer from "./remove_member_reducer";
+import RevokeInviteReducer from "./revoke_invite_reducer";
 import SendCheerReducer from "./send_cheer_reducer";
+import SetActiveTenantReducer from "./set_active_tenant_reducer";
+import SetMemberRoleReducer from "./set_member_role_reducer";
+import SetProfileReducer from "./set_profile_reducer";
 import SetStateReducer from "./set_state_reducer";
 import StartRunReducer from "./start_run_reducer";
+import UpdateTenantReducer from "./update_tenant_reducer";
+import UpsertCourseReducer from "./upsert_course_reducer";
+import UpsertEvaluationReducer from "./upsert_evaluation_reducer";
+import UpsertPolicyReducer from "./upsert_policy_reducer";
+import UpsertReferencePoseReducer from "./upsert_reference_pose_reducer";
+import UpsertResortReducer from "./upsert_resort_reducer";
+import UpsertTrailNetworkReducer from "./upsert_trail_network_reducer";
+import UpsertTrainRunReducer from "./upsert_train_run_reducer";
+import UpsertTrainingSetReducer from "./upsert_training_set_reducer";
 
 // Import all procedure arg schemas
 
@@ -66,8 +95,47 @@ import FeedRow from "./feed_table";
 import HikeRow from "./hike_table";
 import HikeChunkRow from "./hike_chunk_table";
 import HikeStatsRow from "./hike_stats_table";
+import MyAccountRow from "./my_account_table";
+import MyAreaViewRow from "./my_area_view_table";
+import MyCourseViewRow from "./my_course_view_table";
+import MyEvaluationViewRow from "./my_evaluation_view_table";
+import MyInviteRow from "./my_invite_table";
+import MyMemberRow from "./my_member_table";
+import MyPointChunkViewRow from "./my_point_chunk_view_table";
+import MyPointSetViewRow from "./my_point_set_view_table";
+import MyPolicyViewRow from "./my_policy_view_table";
+import MyRecordingChunkViewRow from "./my_recording_chunk_view_table";
+import MyRecordingViewRow from "./my_recording_view_table";
+import MyReferencePoseViewRow from "./my_reference_pose_view_table";
+import MyResortViewRow from "./my_resort_view_table";
+import MySegmentViewRow from "./my_segment_view_table";
+import MyTenantRow from "./my_tenant_table";
+import MyTerrainChunkViewRow from "./my_terrain_chunk_view_table";
+import MyTerrainViewRow from "./my_terrain_view_table";
+import MyTrailNetworkViewRow from "./my_trail_network_view_table";
+import MyTrailViewRow from "./my_trail_view_table";
+import MyTrainRunViewRow from "./my_train_run_view_table";
+import MyTrainingSetViewRow from "./my_training_set_view_table";
 import OutboxRow from "./outbox_table";
 import PlayerRow from "./player_table";
+import PublicAreaViewRow from "./public_area_view_table";
+import PublicCourseViewRow from "./public_course_view_table";
+import PublicEvaluationViewRow from "./public_evaluation_view_table";
+import PublicPointChunkViewRow from "./public_point_chunk_view_table";
+import PublicPointSetViewRow from "./public_point_set_view_table";
+import PublicPolicyViewRow from "./public_policy_view_table";
+import PublicRecordingChunkViewRow from "./public_recording_chunk_view_table";
+import PublicRecordingViewRow from "./public_recording_view_table";
+import PublicReferencePoseViewRow from "./public_reference_pose_view_table";
+import PublicResortViewRow from "./public_resort_view_table";
+import PublicSegmentViewRow from "./public_segment_view_table";
+import PublicTenantRow from "./public_tenant_table";
+import PublicTerrainChunkViewRow from "./public_terrain_chunk_view_table";
+import PublicTerrainViewRow from "./public_terrain_view_table";
+import PublicTrailNetworkViewRow from "./public_trail_network_view_table";
+import PublicTrailViewRow from "./public_trail_view_table";
+import PublicTrainRunViewRow from "./public_train_run_view_table";
+import PublicTrainingSetViewRow from "./public_training_set_view_table";
 import RunRow from "./run_table";
 import RunPhotoRow from "./run_photo_table";
 import SkierRow from "./skier_table";
@@ -298,28 +366,330 @@ const tablesSchema = __schema({
       { name: 'trace_chunk_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, TraceChunkRow),
+  myAccount: __table({
+    name: 'my_account',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAccountRow),
+  myAreaView: __table({
+    name: 'my_area',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAreaViewRow),
+  myCourseView: __table({
+    name: 'my_course',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyCourseViewRow),
+  myEvaluationView: __table({
+    name: 'my_evaluation',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyEvaluationViewRow),
+  myInvite: __table({
+    name: 'my_invite',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyInviteRow),
+  myMember: __table({
+    name: 'my_member',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyMemberRow),
+  myPointChunkView: __table({
+    name: 'my_point_chunk',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyPointChunkViewRow),
+  myPointSetView: __table({
+    name: 'my_point_set',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyPointSetViewRow),
+  myPolicyView: __table({
+    name: 'my_policy',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyPolicyViewRow),
+  myRecordingView: __table({
+    name: 'my_recording',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRecordingViewRow),
+  myRecordingChunkView: __table({
+    name: 'my_recording_chunk',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRecordingChunkViewRow),
+  myReferencePoseView: __table({
+    name: 'my_reference_pose',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyReferencePoseViewRow),
+  myResortView: __table({
+    name: 'my_resort',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyResortViewRow),
+  mySegmentView: __table({
+    name: 'my_segment',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MySegmentViewRow),
+  myTenant: __table({
+    name: 'my_tenant',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTenantRow),
+  myTerrainView: __table({
+    name: 'my_terrain',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTerrainViewRow),
+  myTerrainChunkView: __table({
+    name: 'my_terrain_chunk',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTerrainChunkViewRow),
+  myTrailView: __table({
+    name: 'my_trail',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTrailViewRow),
+  myTrailNetworkView: __table({
+    name: 'my_trail_network',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTrailNetworkViewRow),
+  myTrainRunView: __table({
+    name: 'my_train_run',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTrainRunViewRow),
+  myTrainingSetView: __table({
+    name: 'my_training_set',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTrainingSetViewRow),
+  publicAreaView: __table({
+    name: 'public_area',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicAreaViewRow),
+  publicCourseView: __table({
+    name: 'public_course',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicCourseViewRow),
+  publicEvaluationView: __table({
+    name: 'public_evaluation',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicEvaluationViewRow),
+  publicPointChunkView: __table({
+    name: 'public_point_chunk',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicPointChunkViewRow),
+  publicPointSetView: __table({
+    name: 'public_point_set',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicPointSetViewRow),
+  publicPolicyView: __table({
+    name: 'public_policy',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicPolicyViewRow),
+  publicRecordingView: __table({
+    name: 'public_recording',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicRecordingViewRow),
+  publicRecordingChunkView: __table({
+    name: 'public_recording_chunk',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicRecordingChunkViewRow),
+  publicReferencePoseView: __table({
+    name: 'public_reference_pose',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicReferencePoseViewRow),
+  publicResortView: __table({
+    name: 'public_resort',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicResortViewRow),
+  publicSegmentView: __table({
+    name: 'public_segment',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicSegmentViewRow),
+  publicTenant: __table({
+    name: 'public_tenant',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicTenantRow),
+  publicTerrainView: __table({
+    name: 'public_terrain',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicTerrainViewRow),
+  publicTerrainChunkView: __table({
+    name: 'public_terrain_chunk',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicTerrainChunkViewRow),
+  publicTrailView: __table({
+    name: 'public_trail',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicTrailViewRow),
+  publicTrailNetworkView: __table({
+    name: 'public_trail_network',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicTrailNetworkViewRow),
+  publicTrainRunView: __table({
+    name: 'public_train_run',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicTrainRunViewRow),
+  publicTrainingSetView: __table({
+    name: 'public_training_set',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PublicTrainingSetViewRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("claim_hike_writer", ClaimHikeWriterReducer),
+  __reducerSchema("claim_platform_admin", ClaimPlatformAdminReducer),
   __reducerSchema("close_capture", CloseCaptureReducer),
+  __reducerSchema("close_recording", CloseRecordingReducer),
   __reducerSchema("create_challenge", CreateChallengeReducer),
+  __reducerSchema("create_invite", CreateInviteReducer),
+  __reducerSchema("create_tenant", CreateTenantReducer),
   __reducerSchema("delete_hikes", DeleteHikesReducer),
+  __reducerSchema("delete_item", DeleteItemReducer),
   __reducerSchema("finish_run", FinishRunReducer),
   __reducerSchema("join", JoinReducer),
   __reducerSchema("label_hike", LabelHikeReducer),
   __reducerSchema("link_code", LinkCodeReducer),
   __reducerSchema("mark_sent", MarkSentReducer),
   __reducerSchema("open_capture", OpenCaptureReducer),
+  __reducerSchema("push_areas", PushAreasReducer),
   __reducerSchema("push_capture_chunk", PushCaptureChunkReducer),
   __reducerSchema("push_hike_chunk", PushHikeChunkReducer),
   __reducerSchema("push_photo", PushPhotoReducer),
+  __reducerSchema("push_points", PushPointsReducer),
+  __reducerSchema("push_recording_chunk", PushRecordingChunkReducer),
+  __reducerSchema("push_segments", PushSegmentsReducer),
+  __reducerSchema("push_terrain_rows", PushTerrainRowsReducer),
   __reducerSchema("push_trace", PushTraceReducer),
+  __reducerSchema("push_trails", PushTrailsReducer),
+  __reducerSchema("put_point_set", PutPointSetReducer),
+  __reducerSchema("put_recording", PutRecordingReducer),
+  __reducerSchema("put_terrain", PutTerrainReducer),
   __reducerSchema("record_hike", RecordHikeReducer),
+  __reducerSchema("redeem_invite", RedeemInviteReducer),
+  __reducerSchema("remove_member", RemoveMemberReducer),
+  __reducerSchema("revoke_invite", RevokeInviteReducer),
   __reducerSchema("send_cheer", SendCheerReducer),
+  __reducerSchema("set_active_tenant", SetActiveTenantReducer),
+  __reducerSchema("set_member_role", SetMemberRoleReducer),
+  __reducerSchema("set_profile", SetProfileReducer),
   __reducerSchema("set_state", SetStateReducer),
   __reducerSchema("start_run", StartRunReducer),
+  __reducerSchema("update_tenant", UpdateTenantReducer),
+  __reducerSchema("upsert_course", UpsertCourseReducer),
+  __reducerSchema("upsert_evaluation", UpsertEvaluationReducer),
+  __reducerSchema("upsert_policy", UpsertPolicyReducer),
+  __reducerSchema("upsert_reference_pose", UpsertReferencePoseReducer),
+  __reducerSchema("upsert_resort", UpsertResortReducer),
+  __reducerSchema("upsert_trail_network", UpsertTrailNetworkReducer),
+  __reducerSchema("upsert_train_run", UpsertTrainRunReducer),
+  __reducerSchema("upsert_training_set", UpsertTrainingSetReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
