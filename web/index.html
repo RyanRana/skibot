@@ -55,13 +55,6 @@
   .links a em { font-style: normal; font-size: 20px; }
   .links a video { grid-column: 2 / span 2; grid-row: 2; width: 100%; aspect-ratio: 16 / 9; display: block; background: var(--panel); margin: 4px 0 6px; }
   .links a.pending { pointer-events: none; }
-  .phone-in { border-bottom: 1px solid var(--line); }
-  .phone-in .head { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 24px; align-items: baseline; padding: 22px 0; transition: padding 0.2s; }
-  .phone-in .head:hover { padding-left: 10px; }
-  .phone-in .head:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
-  .phone-in b { font: 400 clamp(22px, 2.4vw, 28px)/1.15 var(--serif); }
-  .phone-in .head span { color: var(--muted); font-size: 15px; }
-  .phone-in .head em { font-style: normal; font-size: 20px; display: inline-block; transition: transform 0.2s; }
   .links a.pending b, .links a.pending span { opacity: 0.4; }
   .links a.pending em { color: var(--faint); font: 500 11px/1 var(--mono); letter-spacing: 0.1em; }
   .use-block { margin-top: 40px; }
@@ -168,7 +161,8 @@
           <video src="media/video_train.mp4" poster="media/video_train.jpg" autoplay muted loop playsinline aria-label="A GoPro ski run with 3D pose on the left and the G1 copying the same carve on the right"></video></a>
         <a data-link="game" class="with-video"><b>Train from gameplay</b><span>Ski in front of your webcam. Your motion capture becomes training data, and the robot copies you live.</span><em>→</em>
           <video src="media/game_train.mp4" poster="media/game_train.jpg" autoplay muted loop playsinline aria-label="The webcam ski game: a player leans and the G1 copies them, then races down the Streif"></video></a>
-        <form class="phone-in" id="phone-in"><a class="head" href="phone.html"><b>Train from your iPhone</b><span>Put in your number and you'll get a text in a few seconds. Tap it once, and your phone quietly records motion and GPS on every run and hike from then on.</span><em>→</em></a></form>
+        <a href="phone.html" class="with-video"><b>Train from your iPhone</b><span>Photon texts you when you head out. Say yes, and your phone records motion and GPS for that hike or ski day.</span><em>→</em>
+          <video src="media/phone_train.mp4" poster="media/phone_train.jpg" autoplay muted loop playsinline aria-label="Walking a rock path with the phone in hand: the Ground Truth app's live readings and the accelerometer spiking on each step"></video></a>
       </div>
     </div>
 
