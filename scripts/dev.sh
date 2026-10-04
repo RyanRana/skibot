@@ -4,7 +4,8 @@
 #   scripts/dev.sh            local SpacetimeDB on :3000, game on http://<LAN IP>:5173, board at /board.html
 #   STDB=maincloud scripts/dev.sh   same, but the game and agent talk to the maincloud database (run `spacetime login` once)
 #
-# Agent needs PHOTON_PROJECT_ID and PHOTON_PROJECT_SECRET in agent/.env to text real phones; without them it runs in terminal mode.
+# The iMessage agent is ground/agent (it replaced agent/, which is no longer started): it needs SPECTRUM_PROJECT_ID and
+# SPECTRUM_PROJECT_SECRET in ground/agent/.env to text real phones; without them it runs in terminal mode.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.local/bin:$PATH"
@@ -22,15 +23,15 @@ else
   URI="wss://maincloud.spacetimedb.com"
 fi
 spacetime generate --lang typescript --out-dir game/src/module_bindings --module-path spacetime/spacetimedb >/dev/null
-spacetime generate --lang typescript --out-dir agent/src/module_bindings --module-path spacetime/spacetimedb >/dev/null
+spacetime generate --lang typescript --out-dir ground/agent/module_bindings --module-path spacetime/spacetimedb >/dev/null
 
 [ -d game/node_modules ] || (cd game && npm install)
-[ -d agent/node_modules ] || (cd agent && npm install)
+[ -d ground/agent/node_modules ] || (cd ground/agent && npm install)
 [ -d spacetime/spacetimedb/node_modules ] || (cd spacetime/spacetimedb && npm install)
 [ -f game/.env ] || cp game/.env.example game/.env
-[ -f agent/.env ] || cp agent/.env.example agent/.env
+[ -f ground/agent/.env ] || cp ground/agent/.env.example ground/agent/.env
 
 echo "[dev] game:  http://${LAN_IP}:5173/   board: http://${LAN_IP}:5173/board.html   spacetimedb: ${URI}"
 (cd game && VITE_STDB_URI="$URI" npx vite --host --port 5173 &)
 sleep 2
-(cd agent && set -a && . ./.env && set +a && STDB_URI="$URI" GAME_URL="http://${LAN_IP}:5173/" npx tsx src/agent.ts)
+(cd ground/agent && STDB_URI="$URI" GAME_URL="http://${LAN_IP}:5173/" npx tsx agent.mjs)
