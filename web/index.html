@@ -62,7 +62,7 @@
   .phone-in input[type=tel] { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); background: var(--bg); color: inherit; }
   .phone-in button { font: inherit; padding: 10px 16px; border: 0; color: var(--bg); background: var(--ink); cursor: pointer; }
   .phone-in button:disabled { opacity: 0.5; cursor: default; }
-  .phone-in .ok { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+  .phone-in .ok { margin: 0; font-size: 13px; }
   .phone-in .msg { margin: 0; font: 500 12px/1.4 var(--mono); min-height: 1em; }
   .links a.pending b, .links a.pending span { opacity: 0.4; }
   .links a.pending em { color: var(--faint); font: 500 11px/1 var(--mono); letter-spacing: 0.1em; }
@@ -172,7 +172,7 @@
           <video src="media/game_train.mp4" poster="media/game_train.jpg" autoplay muted loop playsinline aria-label="The webcam ski game: a player leans and the G1 copies them, then races down the Streif"></video></a>
         <form class="phone-in" id="phone-in"><b>Train from your iPhone</b><span>Put in your number and you'll get a text in a few seconds. Tap it once, and your phone quietly records motion and GPS on every run and hike from then on.</span>
           <div class="row"><input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="(555) 555-0123" required aria-label="Your mobile number"><button type="submit">Text me</button></div>
-          <label class="ok"><input type="checkbox" name="consent" required> Text me about Ground Truth. Reply STOP anytime; "delete my data" removes everything.</label>
+          <p class="ok">Tapping Text me opts you in to texts from Ground Truth. Reply STOP anytime; "delete my data" removes everything.</p>
           <p class="msg" role="status" aria-live="polite"></p></form>
       </div>
     </div>
@@ -265,7 +265,7 @@ actions = policy.infer(obs)   <u># 141 in, 31 out</u></code></pre>
     btn.disabled = true; msg.textContent = "Sending…";
     try {
       const r = await fetch(SIGNUP_URL.replace(/\/$/, "") + "/api/signup", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: form.phone.value, consent: form.consent.checked }) });
+        body: JSON.stringify({ phone: form.phone.value, consent: true }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       msg.textContent = j.already ? "Already sent. Check your messages." : "Sent. Check your messages in a few seconds.";
