@@ -17,8 +17,11 @@ runs_*.log
 
 # Third-party weights, fetched by scripts/fetch_assets.sh
 assets/sonic/
+assets/sonic
+assets/sonic_planner/
 assets/pose/
 assets/menagerie_unitree_g1/
+assets/menagerie_unitree_g1
 *.pt
 *.onnx
 *.task
