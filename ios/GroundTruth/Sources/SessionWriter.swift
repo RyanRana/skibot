@@ -17,6 +17,18 @@ final class SessionWriter {
     private var timer: DispatchSourceTimer?
     private(set) var lastError: String?
 
+    /// What the recording screen shows, updated as samples arrive and summarised once a second.
+    struct Live {
+        var accRms = 0.0     // user acceleration, m/s^2, root mean square over the last second
+        var gyroDps = 0.0    // rotation rate, degrees per second, root mean square over the last second
+        var relAlt: Double?  // metres since the start, barometer
+        var kpa: Double?     // air pressure
+    }
+    private var live = Live()
+    private var accSq = 0.0, gyroSq = 0.0, liveN = 0
+    private var climbRef: Double?
+    static let climbStep = 1.0  // a rise has to beat this to count as climbing, so barometer noise does not
+
     init(state: SessionState) {
         self.state = state
         self.dir = SessionStore.dir(state.id)
@@ -45,6 +57,7 @@ final class SessionWriter {
     }
 
     func snapshot() -> SessionState { queue.sync { state } }
+    func liveSnapshot() -> (SessionState, Live) { queue.sync { (state, live) } }
 
     // MARK: records (call on `queue`)
 
@@ -53,6 +66,9 @@ final class SessionWriter {
              quat: (Double, Double, Double, Double), mag: (Double, Double, Double)?) {
         if let last = state.lastImuT, t - last > Self.gapSeconds { state.gaps.append([last, t]) }
         state.lastImuT = t
+        accSq += acc.0 * acc.0 + acc.1 * acc.1 + acc.2 * acc.2
+        gyroSq += gyro.0 * gyro.0 + gyro.1 * gyro.1 + gyro.2 * gyro.2
+        liveN += 1
         var d = Data(capacity: Self.imuSize)
         d.put(t)
         for v in [acc.0, acc.1, acc.2, grav.0, grav.1, grav.2, gyro.0, gyro.1, gyro.2, quat.0, quat.1, quat.2, quat.3] {
@@ -76,6 +92,16 @@ final class SessionWriter {
         d.put(t)
         for v in [relAlt, kpa, absAlt, absAcc] { d.put(Float32(v)) }
         append("baro", d)
+        if relAlt.isFinite {
+            live.relAlt = relAlt
+            live.kpa = kpa
+            if let ref = climbRef {
+                if relAlt - ref >= Self.climbStep { state.climb = (state.climb ?? 0) + relAlt - ref; climbRef = relAlt }
+                else if ref - relAlt >= Self.climbStep { climbRef = relAlt }
+            } else {
+                climbRef = relAlt
+            }
+        }
     }
 
     // MARK: files
@@ -86,6 +112,11 @@ final class SessionWriter {
     }
 
     private func flush() {
+        if liveN > 0 {
+            live.accRms = (accSq / Double(liveN)).squareRoot()
+            live.gyroDps = (gyroSq / Double(liveN)).squareRoot() * 180 / .pi
+            accSq = 0; gyroSq = 0; liveN = 0
+        }
         if Date().timeIntervalSince(segmentStarted) >= Self.segmentSeconds, !handles.isEmpty {
             writeBuffers()
             handles.values.forEach { try? $0.close() }

@@ -45,9 +45,18 @@ final class Uploader: NSObject, ObservableObject, URLSessionDataDelegate {
         }
     }
 
+    /// Stops uploading a session and forgets it, so a discarded hike leaves no pending files or old errors behind.
+    func forget(_ id: String) {
+        session.getAllTasks { tasks in tasks.filter { $0.taskDescription?.hasPrefix(id + "/") == true }.forEach { $0.cancel() } }
+        pending.removeAll { $0.hasPrefix(id + "/") }
+        lastError = nil
+        server = nil
+        polling?.invalidate()
+    }
+
     private func put(_ s: SessionState, _ name: String) {
         guard let url = URL(string: "\(s.server)/api/session/\(s.id)/file/\(name)") else {
-            lastError = "bad server address: \(s.server)"
+            lastError = "Bad server address: \(s.server)"
             return
         }
         var r = URLRequest(url: url)
@@ -80,8 +89,8 @@ final class Uploader: NSObject, ObservableObject, URLSessionDataDelegate {
             return
         }
         let serverMsg = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? String
-        lastError = "\(parts[1]): " + (error.map { e in let n = e as NSError; return "\(n.localizedDescription.lowercased()) (\(n.domain) \(n.code))" }
-            ?? "server said \(code) \(serverMsg ?? "")")
+        lastError = "\(parts[1]): " + (error.map { e in let n = e as NSError; return "\(n.localizedDescription) (\(n.domain) \(n.code))" }
+            ?? "Server said \(code) \(serverMsg ?? "")")
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.retrySeconds) {
             guard self.pending.contains(desc), let st = SessionStore.load(parts[0]) else { return }
             self.put(st, parts[1])
