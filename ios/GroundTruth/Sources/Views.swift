@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 // The Hazard Intelligence look (web/site.css): white ground, Times for headlines, system sans for text,
@@ -29,6 +30,9 @@ struct RootView: View {
     var body: some View {
         ZStack {
             Ink.bg.ignoresSafeArea()
+            if model.stage == .recording {
+                MapBackdrop(coordinate: recorder.here).ignoresSafeArea().transition(.opacity)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .center, spacing: 14) {
@@ -60,7 +64,7 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .defaultScrollAnchor(debugScrollToBottom ? .bottom : .top)  // screenshots of the lower half in the simulator
-            .overlay(alignment: .top) { Ink.bg.ignoresSafeArea(edges: .top).frame(height: 0) }  // nothing scrolls under the clock
+            .clipped()  // nothing scrolls under the clock, and the map backdrop still shows behind the status bar
         }
         .foregroundStyle(Ink.text)
         .font(.system(size: 16))
@@ -309,6 +313,12 @@ struct RecordingView: View {
             }
             Text(clock(now.timeIntervalSince1970 - started)).font(serif(84)).tracking(-1.5).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.5).padding(.top, 10).padding(.bottom, 28)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Kicker(text: "Location")
+                Text(recorder.here.map { String(format: "%.5f, %.5f", $0.latitude, $0.longitude) } ?? "searching for GPS")
+                    .font(serif(18)).monospacedDigit()
+            }
+            .padding(.bottom, 28)
             let m = recorder.motionNow
             Kicker(text: "Sensors").padding(.bottom, 2)
             Ledger(stats: [
@@ -353,6 +363,33 @@ struct RecordingView: View {
     }
 }
 
+/// The whole recording screen sits on a faded satellite map that follows the hiker, with a dot where they are.
+struct MapBackdrop: View {
+    let coordinate: CLLocationCoordinate2D?
+    @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
+
+    var body: some View {
+        Map(position: $camera, interactionModes: [])
+            .mapStyle(.imagery)
+            .mapControlVisibility(.hidden)
+            .opacity(0.16)
+            .overlay {
+                if coordinate != nil {   // the camera centres on the fix, so the dot sits in the middle
+                    Circle().fill(Ink.go).frame(width: 12, height: 12)
+                        .overlay(Circle().stroke(.white, lineWidth: 2.5))
+                        .shadow(color: .black.opacity(0.35), radius: 3)
+                }
+            }
+            .allowsHitTesting(false)
+            .onChange(of: coordinate?.latitude) { _, _ in
+                guard let c = coordinate else { return }
+                withAnimation(.easeOut(duration: 0.6)) {
+                    camera = .region(MKCoordinateRegion(center: c, latitudinalMeters: 400, longitudinalMeters: 400))
+                }
+            }
+    }
+}
+
 struct HoldButton: View {
     let title: String
     var fill: Color = Ink.text
@@ -372,6 +409,7 @@ struct HoldButton: View {
             }
         }
         .frame(height: 52)
+        .background(Ink.bg.opacity(0.75))   // stays legible over the map backdrop
         .overlay(Rectangle().stroke(border, lineWidth: 1))
         .contentShape(Rectangle())
         .onLongPressGesture(minimumDuration: 1.5) {
