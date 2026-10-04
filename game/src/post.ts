@@ -1,6 +1,8 @@
 // Post-processing: a soft bloom on sun and sparkle, and a speed pass that pulls the edges of the frame
 // into a radial blur with a touch of chromatic aberration and vignette as you get faster. MSAA is kept
-// through the composer with a multisampled render target, and OutputPass applies tone mapping.
+// through the composer with a multisampled render target, and OutputPass applies tone mapping. After it, in
+// display space, a grade: cool shadows, warm highlights, a little more colour, a gentle S-curve and fine
+// grain, so the frame reads like a winter broadcast instead of a flat render.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -17,10 +19,12 @@ const SpeedShader = {
     uDim: { value: 0 },        // 0..1 darken + desaturate (wipeout, finish freeze)
     uAspect: { value: 16 / 9 },
     uTime: { value: 0 },
+    uBeat: { value: 0 },       // 0..1 heartbeat thump (Presage)
+    uTunnel: { value: 0 },     // 0..1 how hard the heart is racing
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uSpeed, uFlash, uDim, uAspect, uTime;
+    uniform sampler2D tDiffuse; uniform float uSpeed, uFlash, uDim, uAspect, uTime, uBeat, uTunnel;
     float hash(float n){ return fract(sin(n) * 43758.5453); } uniform vec3 uFlashColor; varying vec2 vUv;
     void main(){
       vec2 c = vec2(0.5, 0.56);
@@ -45,6 +49,10 @@ const SpeedShader = {
       // vignette
       float vig = 1.0 - smoothstep(0.55, 1.25, r) * (0.35 + 0.35 * uSpeed);
       col.rgb *= vig;
+      // your heartbeat at the edges of the frame: a thump on every beat, a red tunnel when it races
+      float edgeB = smoothstep(0.45, 1.15, r);
+      col.rgb *= 1.0 - edgeB * (0.05 + 0.25 * uTunnel) * uBeat - edgeB * 0.22 * uTunnel;
+      col.rgb += vec3(0.20, 0.0, 0.03) * edgeB * uBeat * uTunnel;
       // dim / desaturate
       float l = dot(col.rgb, vec3(0.299, 0.587, 0.114));
       col.rgb = mix(col.rgb, vec3(l) * 0.6, uDim);
@@ -54,22 +62,44 @@ const SpeedShader = {
     }`,
 };
 
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null }, uTime: { value: 0 }, uAmount: { value: 1 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime, uAmount; varying vec2 vUv;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main(){
+      vec3 c0 = texture2D(tDiffuse, vUv).rgb, c = c0;
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c = mix(vec3(l), c, 1.1);                                              // a little more colour
+      c += vec3(-0.012, 0.004, 0.034) * (1.0 - smoothstep(0.0, 0.55, l));    // cool shadows
+      c *= mix(vec3(1.0), vec3(1.035, 1.0, 0.955), smoothstep(0.55, 1.0, l)); // warm highlights
+      c = mix(c, c * c * (3.0 - 2.0 * c), 0.12);                             // gentle S-curve
+      c += (h(vUv * 1024.0 + fract(uTime) * 61.0) - 0.5) * 0.018;            // fine grain
+      gl_FragColor = vec4(mix(c0, clamp(c, 0.0, 1.0), uAmount), 1.0);
+    }`,
+};
+
 export class Post {
   composer: EffectComposer;
   speed: ShaderPass;
   bloom: UnrealBloomPass;
+  grade: ShaderPass;
   private flash = 0; private flashColor = new THREE.Color('#ffffff');
   dim = 0;
+  beat = 0; tunnel = 0;
   constructor(public renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, lowfx: boolean) {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const target = new THREE.WebGLRenderTarget(size.x, size.y, { samples: lowfx ? 0 : 4, type: THREE.HalfFloatType });
     this.composer = new EffectComposer(renderer, target);
     this.composer.addPass(new RenderPass(scene, camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), lowfx ? 0.16 : 0.26, 0.5, 0.86);
-    this.composer.addPass(this.bloom);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), lowfx ? 0.1 : 0.18, 0.4, 2.05 /* above any sunlit white; only emitters bloom */);
+    if (!new URLSearchParams(location.search).has('nobloom')) this.composer.addPass(this.bloom);
     this.speed = new ShaderPass(SpeedShader);
     this.composer.addPass(this.speed);
     this.composer.addPass(new OutputPass());
+    this.grade = new ShaderPass(GradeShader);
+    if (!new URLSearchParams(location.search).has('nograde')) this.composer.addPass(this.grade);
     this.setSize(innerWidth, innerHeight);
   }
   setSize(w: number, h: number) {
@@ -85,7 +115,10 @@ export class Post {
     this.speed.uniforms.uFlash.value = this.flash;
     this.speed.uniforms.uFlashColor.value.copy(this.flashColor);
     this.speed.uniforms.uDim.value = this.dim;
+    this.speed.uniforms.uBeat.value = this.beat;
+    this.speed.uniforms.uTunnel.value = this.tunnel;
     this.speed.uniforms.uTime.value += dt;
+    this.grade.uniforms.uTime.value += dt;
     this.composer.render(dt);
   }
 }

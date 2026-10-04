@@ -895,3 +895,27 @@ export const TrainingSet = __t.object("TrainingSet", {
 });
 export type TrainingSet = __Infer<typeof TrainingSet>;
 
+export const VitalChunk = __t.object("VitalChunk", {
+  id: __t.u64(),
+  runKey: __t.string(),
+  course: __t.string(),
+  name: __t.string(),
+  restHr: __t.f32(),
+  get samples() {
+    return __t.array(VitalSample);
+  },
+  at: __t.timestamp(),
+});
+export type VitalChunk = __Infer<typeof VitalChunk>;
+
+export const VitalSample = __t.object("VitalSample", {
+  tMs: __t.u32(),
+  x: __t.f32(),
+  y: __t.f32(),
+  s: __t.f32(),
+  hr: __t.f32(),
+  br: __t.f32(),
+  rise: __t.f32(),
+});
+export type VitalSample = __Infer<typeof VitalSample>;
+

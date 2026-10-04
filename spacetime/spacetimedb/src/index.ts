@@ -160,6 +160,32 @@ const runPhoto = table(
   }
 );
 
+// What the body felt, from the camera (Presage): heart rate and breathing, registered to the course like the
+// motion is. `rise` is the skier's pulse over their own resting rate, so everyone's runs pool into one hazard
+// map: the stretches of real terrain where people's hearts race. That is Hazard Intelligence.
+const VitalSample = t.object('VitalSample', {
+  tMs: t.u32(),
+  x: t.f32(),
+  y: t.f32(),
+  s: t.f32(),     // metres along the course
+  hr: t.f32(),    // beats per minute
+  br: t.f32(),    // breaths per minute, 0 when not measured
+  rise: t.f32(),  // hr / restHr - 1
+});
+
+const vitalChunk = table(
+  { name: 'vital_chunk', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    runKey: t.string().index('btree'),
+    course: t.string().index('btree'),
+    name: t.string(),
+    restHr: t.f32(),
+    samples: t.array(VitalSample),
+    at: t.timestamp(),
+  }
+);
+
 const tickTimer = table(
   { name: 'tick_timer' },
   {
@@ -834,7 +860,7 @@ const apiCall = table(
 );
 
 const spacetimedb = schema({
-  player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, tickTimer, hike, hikeChunk, hikeStats,
+  player, skier, run, traceChunk, datasetStats, feed, challenge, outbox, cheer, runPhoto, vitalChunk, tickTimer, hike, hikeChunk, hikeStats,
   hikeWriter, capture, captureChunk, captureStats, account, tenant, member, invite, platformAdmin, resort, course, terrain,
   terrainChunk, trailNetwork, trail, area, recording, recordingChunk, pointSet, pointChunk, segment, referencePose, trainingSet, policy, trainRun, evaluation,
   appUser, appMessage, appInvite, appSession, platformService, apiKey, apiCall,
@@ -1020,6 +1046,17 @@ export const pushPhoto = spacetimedb.reducer(
     const existing = ctx.db.runPhoto.runKey.find(runKey);
     if (existing) ctx.db.runPhoto.runKey.update({ ...existing, jpeg, at: ctx.timestamp });
     else ctx.db.runPhoto.insert({ runKey, jpeg, at: ctx.timestamp });
+  }
+);
+
+// A chunk of the skier's vitals during a run (about one sample a second, only fresh, confident readings).
+export const pushVitals = spacetimedb.reducer(
+  { runKey: t.string(), restHr: t.f32(), samples: t.array(VitalSample) },
+  (ctx, { runKey, restHr, samples }) => {
+    const r = ctx.db.run.key.find(runKey);
+    if (!r || !r.identity.equals(ctx.sender)) throw new SenderError('not your run');
+    if (samples.length === 0 || samples.length > 200 || !(restHr > 30 && restHr < 200)) return;
+    ctx.db.vitalChunk.insert({ id: 0n, runKey, course: r.course, name: r.name, restHr, samples, at: ctx.timestamp });
   }
 );
 

@@ -10,7 +10,10 @@ export const G = 9.81;
 export interface Input {
   lean: number;    // -1 (left) .. 1 (right)
   crouch: number;  // 0 standing .. 1 full tuck
-  jump: boolean;   // edge-triggered hop
+  jump: boolean;   // edge-triggered hop (a skating push when slow)
+  push?: number;   // 0..1 explicit accelerate (pumping); fades out above ~36 km/h
+  pole?: number;   // pole plants this step: 1 = one arm, 2 = double pole
+  boost?: number;  // 0..1 a powerup's thrust along the skis (m/s^2 scaled), fades toward ~120 km/h
 }
 
 export interface SkierState {
@@ -116,10 +119,25 @@ export function step(s: SkierState, inp: Input, dt: number, course: Course, tune
     s.heading = wrap(s.heading - turn * dt);
     // Off piste: deep snow drags.
     if (s.offPiste) vAlong -= vAlong * 0.9 * dt;
-    // Hop at speed; at a near standstill the same move is a skating push.
+    // Accelerate: poling and pumping. Strong from a standstill, gone by about 10 m/s, where the tuck's
+    // lower drag takes over as the way to go faster.
+    const push = Math.max(0, Math.min(1, inp.push ?? 0));
+    if (push > 0) vAlong += 2.6 * push * Math.max(0, 1 - vAlong / 10) * dt;
+    // Pole plants: an impulse per plant, a double pole is worth more than two singles. Fades by ~12 m/s.
+    const poles = inp.pole ?? 0;
+    if (poles > 0) vAlong += (poles === 2 ? 1.6 : 0.6) * Math.max(0.25, 1 - vAlong / 12);
+    // Powerup thrust: strong, but it fades out toward 34 m/s so a boost never runs away.
+    const boost = Math.max(0, Math.min(1.5, inp.boost ?? 0));
+    if (boost > 0) vAlong += 5.5 * boost * Math.max(0, 1 - vAlong / 34) * dt;
+    // Hop at speed; below ~7 m/s the same move is a skating push.
     s.skateCd = Math.max(0, s.skateCd - dt);
-    if (inp.jump && vAlong > 2) { s.air = true; s.airTime = 0; s.vz = tune.jumpV + Math.abs(s.vz); }
-    else if (inp.jump && s.skateCd === 0) { vAlong += 1.6; s.skateCd = 0.7; }
+    // A hop always leaves the snow once you are moving (a player who jumps expects the robot to jump), higher
+    // the faster you go; when slow it is also a skating push. Standing still it is only the push.
+    if (inp.jump && vAlong > 2.5) {
+      s.air = true; s.airTime = 0; s.vz = tune.jumpV * (0.7 + 0.3 * Math.min(1, vAlong / 10)) + Math.abs(s.vz);
+      if (vAlong < 7 && s.skateCd === 0) { vAlong += 1.2; s.skateCd = 0.6; }
+    }
+    else if (inp.jump && s.skateCd === 0) { vAlong += 2.0 * Math.max(0.4, 1 - vAlong / 10); s.skateCd = 0.6; }
     // Wipeout: too much sideways speed at an aggressive edge angle.
     if (s.slip > 9.5 && Math.abs(s.edge) > 0.95 && vAlong > 13) { s.crashed = 1.0; }
   } else {
@@ -174,6 +192,10 @@ export class GateTracker {
   hit: boolean[] = [];
   missed: boolean[] = [];
   lastSide: number[] = [];
+  /** Gates left under the magnet: they count a pass well outside the poles. */
+  assist = 0;
+  /** 0..1 extra width for a player whose heart is racing (vitals); softer than the magnet. */
+  ease = 0;
   private course: Course;
   constructor(course: Course) {
     this.course = course;
@@ -192,22 +214,27 @@ export class GateTracker {
       const side = gateSide(g, x, y);
       if (this.lastSide[k] > 0 && side <= 0) {
         const u = gateSpan(g, x, y);
-        if (u > -0.45 && u < 1.45) {
+        const wide = this.assist > 0 ? 1.6 : 0.7 * Math.max(0, Math.min(1, this.ease));
+        if (u > -0.45 - wide && u < 1.45 + wide) {
           this.hit[k] = true;
           for (let j = this.next; j < k; j++) if (!this.hit[j]) this.missed[j] = true;
           this.next = k + 1; result = 'hit';
+          if (this.assist > 0) this.assist--;
           this.lastSide[k] = side; break;
         } else if (k === this.next && u > -3 && u < 4) {
           // Crossed the gate line just outside the poles: a straddle or a near miss. Missed, move on.
           this.missed[k] = true; this.next = k + 1; result = 'miss';
+          if (this.assist > 0) this.assist--;
           this.lastSide[k] = side; break;
         }
       }
       this.lastSide[k] = side;
     }
-    // Passed well below the next gate without crossing between its poles: a miss.
-    if (result === null && this.next < this.total && s > gates[this.next].s + 9) {
-      this.missed[this.next] = true; this.next++; result = 'miss';
+    // Past the next gate's line by a couple of metres without going through it: a miss, right away, so
+    // the beacon and the arrow move on instead of asking you to turn back.
+    if (result === null && this.next < this.total) {
+      const g = gates[this.next];
+      if (gateSide(g, x, y) < -2.5 || s > g.s + 9) { this.missed[this.next] = true; this.next++; result = 'miss'; if (this.assist > 0) this.assist--; }
     }
     return result;
   }

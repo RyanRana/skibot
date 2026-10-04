@@ -2,10 +2,25 @@
 // ~8 Hz, and surface everyone else's rows to the game. Works offline: every call is a no-op until
 // the connection is up, and the game never waits on it.
 import { DbConnection, tables } from './module_bindings/index.ts';
-import type { Skier, Run, Player, DatasetStats, Feed, Challenge, PoseSample, Cheer, TraceChunk } from './module_bindings/types.ts';
+import type { Skier, Run, Player, DatasetStats, Feed, Challenge, PoseSample, Cheer, TraceChunk, VitalChunk, VitalSample } from './module_bindings/types.ts';
 import type { Identity } from 'spacetimedb';
 
-export type { Skier, Run, Player, DatasetStats, Feed, Challenge, PoseSample, Cheer, TraceChunk };
+export type { Skier, Run, Player, DatasetStats, Feed, Challenge, PoseSample, Cheer, TraceChunk, VitalChunk, VitalSample };
+
+/** One stretch of the course in the hazard map: how far above their resting rate people's hearts ran there. */
+export interface HazardBin { s0: number; s1: number; rise: number; n: number; runs: number }
+
+/** Pool everyone's vitals into course bins (by metres along the course): the mean pulse rise over resting. */
+export function hazardMap(chunks: VitalChunk[], binM = 25): HazardBin[] {
+  const bins = new Map<number, { sum: number; n: number; runs: Set<string> }>();
+  for (const c of chunks) for (const v of c.samples) {
+    if (!(v.rise > -0.5 && v.rise < 1.5)) continue;
+    const k = Math.floor(v.s / binM);
+    const b = bins.get(k) ?? bins.set(k, { sum: 0, n: 0, runs: new Set() }).get(k)!;
+    b.sum += v.rise; b.n++; b.runs.add(c.runKey);
+  }
+  return [...bins.entries()].sort((a, b) => a[0] - b[0]).map(([k, b]) => ({ s0: k * binM, s1: (k + 1) * binM, rise: b.sum / b.n, n: b.n, runs: b.runs.size }));
+}
 
 export const STDB_URI = (import.meta.env.VITE_STDB_URI as string | undefined) || 'ws://127.0.0.1:3000';
 export const STDB_DB = (import.meta.env.VITE_STDB_DB as string | undefined) || 'ground-truth';
@@ -53,7 +68,7 @@ export class Net {
               this.ev.changed?.();
             })
             .onError((_c: unknown, e?: unknown) => { console.error('subscription', e); this.set('subscription error'); })
-            .subscribe([tables.player, tables.skier, tables.run, tables.datasetStats, tables.feed, tables.challenge, tables.cheer]);
+            .subscribe([tables.player, tables.skier, tables.run, tables.datasetStats, tables.feed, tables.challenge, tables.cheer, tables.vitalChunk]);
           conn.db.skier.onInsert((_c, r) => this.ev.skier?.('insert', r));
           conn.db.skier.onUpdate((_c, _o, r) => this.ev.skier?.('update', r));
           conn.db.skier.onDelete((_c, r) => this.ev.skier?.('delete', r));
@@ -63,6 +78,7 @@ export class Net {
           conn.db.player.onInsert(ping); conn.db.player.onUpdate(ping); conn.db.player.onDelete(ping);
           conn.db.datasetStats.onInsert(ping); conn.db.datasetStats.onUpdate(ping);
           conn.db.feed.onInsert(ping); conn.db.feed.onDelete(ping);
+          conn.db.vitalChunk.onInsert(ping);
           conn.db.challenge.onInsert(ping); conn.db.challenge.onUpdate(ping);
           conn.db.traceChunk.onInsert((_c, r) => this.traceChanged(r.runKey));
         })
@@ -92,6 +108,8 @@ export class Net {
   bestRun(course: string, gatesTotal: number): Run | null {
     return this.runs(course).find(r => r.gatesTotal === gatesTotal && r.splits.length > 0) ?? null;
   }
+  /** Everyone's vitals on this course (the hazard map is built from these). */
+  vitals(course?: string): VitalChunk[] { return this.conn ? [...this.conn.db.vitalChunk.iter()].filter(c => !course || c.course === course) : []; }
   stats(): DatasetStats | null { return this.conn ? (this.conn.db.datasetStats.id.find(0) ?? null) : null; }
   feed(): Feed[] { return this.conn ? [...this.conn.db.feed.iter()].sort((a, b) => Number(b.id - a.id)) : []; }
   challengesFor(name: string): Challenge[] {
@@ -138,6 +156,7 @@ export class Net {
   startRun(key: string, course: string, gatesTotal: number) { this.call(() => this.conn!.reducers.startRun({ key, course, gatesTotal }), true); }
   pushTrace(runKey: string, seq: number, samples: PoseSample[]) { this.call(() => this.conn!.reducers.pushTrace({ runKey, seq, samples }), true); }
   finishRun(key: string, timeMs: number, gatesHit: number, maxSpeed: number, distanceM: number, splits: number[]) { this.call(() => this.conn!.reducers.finishRun({ key, timeMs, gatesHit, maxSpeed, distanceM, splits }), true); }
+  pushVitals(runKey: string, restHr: number, samples: VitalSample[]) { this.call(() => this.conn!.reducers.pushVitals({ runKey, restHr, samples }), true); }
   pushPhoto(runKey: string, jpeg: string) { this.call(() => this.conn!.reducers.pushPhoto({ runKey, jpeg }), true); }
   sendCheer(fromName: string, toName: string, kind: string) { this.call(() => this.conn!.reducers.sendCheer({ fromName, toName, kind })); }
 }

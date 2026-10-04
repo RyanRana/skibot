@@ -34,13 +34,17 @@ ios/GroundTruth/Local.xcconfig
 ios/GroundTruth/build/
 ground/agent/.env
 
-# MHacks game, SpacetimeDB module and the old agent (from main)
+# MHacks game and SpacetimeDB module
 game/node_modules/
 game/dist/
 game/.env
-agent/node_modules/
-agent/.env
-agent/.agent-state.json
+game/.env.local
+game/.env.*.local
 spacetime/spacetimedb/node_modules/
 spacetime/spacetime.local.json
 spacetime/spacetimedb/dist/
+
+# Local play recordings from the game's ?watch mode (camera frames, pose logs)
+game/.rec/
+# Cached commentator speech from ElevenLabs
+game/.tts-cache/

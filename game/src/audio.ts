@@ -8,6 +8,10 @@ export class Audio {
   private master!: GainNode;
   voiceOn = true;
   private speaking = 0;
+  /** When set (the ElevenLabs commentator), announcer lines go there instead of the browser's voice. */
+  speaker: ((text: string, force: boolean) => void) | null = null;
+  /** Where speech plays: through the master bus, so it shares the game's volume. */
+  get out(): AudioNode | null { return this.master ?? null; }
 
   start() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
@@ -63,6 +67,8 @@ export class Audio {
   }
   fanfare() { [[523, 0], [659, 120], [784, 240], [1046, 360], [1046, 600], [1318, 720]].forEach(([f, d]) => setTimeout(() => this.blip(f, 0.5, 0.3, 'triangle'), d)); this.crowd(3.5, 0.7); }
   wipeout() { this.burst(0.3, 0.6, 500); this.blip(90, 0.4, 0.3, 'sawtooth'); }
+  /** A pole plant: a short crunch, two for a double pole. */
+  pole(double = false) { this.burst(0.05, double ? 0.35 : 0.22, 1400); if (double) setTimeout(() => this.burst(0.05, 0.3, 1600), 40); }
   land(hard: number) { this.burst(0.08 + hard * 0.1, 0.2 + hard * 0.3, 900); }
   private burst(dur: number, gain: number, freq: number) {
     if (!this.ctx) return;
@@ -80,8 +86,14 @@ export class Audio {
     o.connect(g).connect(this.master); o.start(); o.stop(this.ctx.currentTime + dur);
   }
 
-  /** The announcer. Short lines only; drops lines while one is still being spoken unless forced. */
+  /** The announcer: the commentator when there is one, otherwise the browser's voice. */
   say(text: string, force = false) {
+    if (!this.voiceOn) return;
+    if (this.speaker) { this.speaker(text, force); return; }
+    this.speak(text, force);
+  }
+  /** The browser's speech synthesis. Short lines only; drops lines while one is still being spoken unless forced. */
+  speak(text: string, force = false) {
     if (!this.voiceOn || !('speechSynthesis' in window)) return;
     const now = performance.now();
     if (!force && now < this.speaking) return;

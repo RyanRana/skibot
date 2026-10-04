@@ -10,6 +10,14 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+import {
+  VitalSample,
+} from "./types";
+
 export default {
-  id: __t.u64(),
+  runKey: __t.string(),
+  restHr: __t.f32(),
+  get samples() {
+    return __t.array(VitalSample);
+  },
 };

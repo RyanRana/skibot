@@ -64,6 +64,7 @@ import PushSegmentsReducer from "./push_segments_reducer";
 import PushTerrainRowsReducer from "./push_terrain_rows_reducer";
 import PushTraceReducer from "./push_trace_reducer";
 import PushTrailsReducer from "./push_trails_reducer";
+import PushVitalsReducer from "./push_vitals_reducer";
 import PutPointSetReducer from "./put_point_set_reducer";
 import PutRecordingReducer from "./put_recording_reducer";
 import PutTerrainReducer from "./put_terrain_reducer";
@@ -159,6 +160,7 @@ import RunPhotoRow from "./run_photo_table";
 import ServiceApiKeyViewRow from "./service_api_key_view_table";
 import SkierRow from "./skier_table";
 import TraceChunkRow from "./trace_chunk_table";
+import VitalChunkRow from "./vital_chunk_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -385,6 +387,23 @@ const tablesSchema = __schema({
       { name: 'trace_chunk_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, TraceChunkRow),
+  vitalChunk: __table({
+    name: 'vital_chunk',
+    indexes: [
+      { accessor: 'course', name: 'vital_chunk_course_idx_btree', algorithm: 'btree', columns: [
+        'course',
+      ] },
+      { accessor: 'id', name: 'vital_chunk_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'runKey', name: 'vital_chunk_run_key_idx_btree', algorithm: 'btree', columns: [
+        'runKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'vital_chunk_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, VitalChunkRow),
   myAccount: __table({
     name: 'my_account',
     indexes: [
@@ -748,6 +767,7 @@ const reducersSchema = __reducers(
   __reducerSchema("push_terrain_rows", PushTerrainRowsReducer),
   __reducerSchema("push_trace", PushTraceReducer),
   __reducerSchema("push_trails", PushTrailsReducer),
+  __reducerSchema("push_vitals", PushVitalsReducer),
   __reducerSchema("put_point_set", PutPointSetReducer),
   __reducerSchema("put_recording", PutRecordingReducer),
   __reducerSchema("put_terrain", PutTerrainReducer),
