@@ -13,13 +13,14 @@ image = (
     .pip_install("fastapi[standard]", "numpy", "msgpack")
     .env({"HI_POLICY_DIR": "/root/policies"})
     .add_local_file(HERE / "hi_server.py", "/root/hi_server.py")
+    .add_local_file(HERE / "mission.py", "/root/mission.py")
     .add_local_dir(HERE / "policies", "/root/policies")
 )
 
 app = modal.App("hazard-intelligence-api", image=image)
 
 
-@app.function(cpu=1.0, memory=1024, scaledown_window=600)
+@app.function(cpu=1.0, memory=1024, scaledown_window=600, max_containers=1)  # missions live in memory
 @modal.concurrent(max_inputs=64)
 @modal.asgi_app()
 def api():

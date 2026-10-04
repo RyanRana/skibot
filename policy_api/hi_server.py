@@ -13,6 +13,9 @@ every policy can be downloaded as ONNX to run inside your own physics loop at fu
   GET  /v1/policies/{id}/weights     the same network as numpy arrays (npz)
   POST /v1/policies/{id}/infer       {"obs": [...] or [[...], ...]} -> {"actions": ...}
   WS   /v1/policies/{id}/ws          openpi protocol: metadata, then {"obs": array} -> {"actions": array}
+  POST /v1/missions                  {policy, route: {x, y}, target_s | target_xy, speed?, arrive_radius?} -> mission
+  POST /v1/missions/{mid}/step       {obs, pose: {x, y, yaw}} -> actions with the server's own route command
+  GET  /v1/missions/{mid}            progress, distance to target, arrival time; ?log=1 adds every step
   WS   /                             same, default policy (or ?policy=<id>), so openpi_client can point at the host
 """
 from __future__ import annotations
@@ -30,6 +33,8 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+import mission as missions
 
 POLICY_DIR = Path(os.environ.get("HI_POLICY_DIR", Path(__file__).parent / "policies"))
 DEFAULT_POLICY = os.environ.get("HI_DEFAULT_POLICY", "g1-ski")
@@ -183,3 +188,73 @@ async def root_ws(ws: WebSocket):
         await ws.close(code=4404)
         return
     await _serve_ws(ws, POLICIES[pid])
+
+
+MISSIONS: dict[str, missions.Mission] = {}
+
+
+class Route(BaseModel):
+    x: list[float]
+    y: list[float]
+
+
+class MissionRequest(BaseModel):
+    policy: str = DEFAULT_POLICY
+    route: Route
+    target_s: float | None = None
+    target_xy: list[float] | None = None
+    speed: float = 3.0
+    arrive_radius: float = 3.0
+
+
+class Pose(BaseModel):
+    x: float
+    y: float
+    yaw: float
+
+
+class StepRequest(BaseModel):
+    obs: list[float]
+    pose: Pose
+    t: float | None = None
+
+
+def command_slice(p: Policy) -> slice:
+    f = next(o for o in p.meta["observation"] if o["name"] == "command")
+    return slice(f["start"], f["start"] + f["size"])
+
+
+@app.post("/v1/missions")
+def create_mission(req: MissionRequest):
+    get(req.policy)
+    try:
+        m = missions.make(req.policy, req.route.x, req.route.y, req.target_s, req.target_xy,
+                          speed=req.speed, arrive_radius=req.arrive_radius)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    MISSIONS[m.id] = m
+    return m.status()
+
+
+def get_mission(mid: str) -> missions.Mission:
+    if mid not in MISSIONS:
+        raise HTTPException(404, f"no mission {mid!r}")
+    return MISSIONS[mid]
+
+
+@app.post("/v1/missions/{mid}/step")
+def mission_step(mid: str, req: StepRequest):
+    m = get_mission(mid)
+    p = get(m.policy)
+    obs = np.asarray(req.obs, dtype=np.float32)
+    if obs.shape != (p.obs_dim,):
+        raise HTTPException(422, f"{p.meta['id']} expects obs of size {p.obs_dim}, got {obs.shape}")
+    cmd = m.command(req.pose.x, req.pose.y, req.pose.yaw, req.t)
+    obs[command_slice(p)] = cmd.pop("command")
+    return {"mission": mid, "actions": p.infer({"obs": obs})["actions"].tolist(), **cmd}
+
+
+@app.get("/v1/missions/{mid}")
+def mission_status(mid: str, log: bool = False):
+    m = get_mission(mid)
+    return {**m.status(), **({"log": m.log} if log else {})}
