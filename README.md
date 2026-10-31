@@ -2,22 +2,23 @@
 
 data collection & rl envs for humanoid training. skiing and hiking.
 
-a unitree g1 learns to ski real world cup pistes and hike real trails in mujoco. the terrain is real (openstreetmap + elevation tiles + lidar), the body is a pretrained whole body controller (nvidia gear-sonic), and a small ppo policy on top teaches it the sport. people feed it data: phones on hikes, gopros on ski runs, and anyone who skis the live browser game with their body.
+tooling to collect human motion on real terrain and turn it into training envs for a unitree g1. the terrain is real (openstreetmap + elevation tiles + lidar), the body is a pretrained whole body controller (nvidia gear-sonic), and a small ppo policy on top learns the activity.
 
-## two halves
+## data collection
 
-**rl envs**
+every recording is registered to the ground it happened on, so motion, terrain and vitals line up with the training envs.
 
-- `skisim/` + `train/`: skiing. ski physics mujoco can't do on its own, any resort as a course, perturbed terrain with a curriculum, 4096 robots on one h100.
-- `hikesim/` + `train/hike_*.py`: hiking. ann arbor trails from usgs 1 m lidar, rocks and roots added, sonic's kinematic planner for steps. details in [HIKING.md](HIKING.md).
+- **phone recorder** (`ground/`, `ios/GroundTruth/`). an iphone app records a hike in the background (100 hz motion, gps, barometer, steps) and uploads it. the server ties it to the trail under it: distance, climb, osm trail match, cadence, gaps. opt in and summaries go over imessage (photon agent). see [ground/README.md](ground/README.md).
+- **browser capture** (`game/`, `presage-relay/`). webcam pose in the browser on the real streif, retargeted onto the g1 live, many people at once on one shared course. each session stores human motion against real terrain, plus heart rate and breathing read from the same camera (presage), pooled into a hazard map of where on the terrain people's hearts race. live at [hazard-intelligence-seven.vercel.app](https://hazard-intelligence-seven.vercel.app). see [GAME.md](GAME.md).
+- **gopro runs** (`gopro.py`). gopro imu/gps ski runs (zenodo) matched to the terrain.
+- **race video** (`skisim/pose_from_video.py`). world cup giant slalom video to g1 joint targets for athletic posture.
+- **one database.** everything that isn't code (maps, terrain, recordings, training inputs, the policy registry) lives in one spacetimedb database. see [DATABASE.md](DATABASE.md).
 
-**data collection**
+## training envs
 
-- `ground/` + `ios/GroundTruth/`: an iphone app records a hike in the background (100 hz motion, gps, barometer, steps), uploads it, and the server ties it to the trail under it. a photon imessage agent handles opt in and texts back a summary. see [ground/README.md](ground/README.md).
-- `gopro.py`: gopro imu/gps ski runs (zenodo) matched to the terrain.
-- `skisim/pose_from_video.py`: world cup giant slalom video to g1 joint targets for athletic posture.
-- `game/`: **hazard intelligence**, built at mhacks 2026. ski the real streif in the browser with your body (webcam pose), the g1 copies you, everyone races on one shared mountain, and every run adds human motion registered to real terrain. presage reads heart rate and breathing from the same camera and pools it into a hazard map of where people's hearts race. live at [hazard-intelligence-seven.vercel.app](https://hazard-intelligence-seven.vercel.app). see [GAME.md](GAME.md).
-- everything that isn't code (maps, terrain, recordings, training inputs, the policy registry) lives in one spacetimedb database. see [DATABASE.md](DATABASE.md).
+- **skiing** (`skisim/`, `train/`). ski physics mujoco can't do on its own, any resort as a course, perturbed terrain with a curriculum, 4096 robots on one h100.
+- **hiking** (`hikesim/`, `train/hike_*.py`). trails from usgs 1 m lidar, rocks and roots added, sonic's kinematic planner for steps. see [HIKING.md](HIKING.md).
+- **policy api** (`policy_api/`). serves trained policies over http and an openpi-compatible websocket, so any physics loop can run them zero shot.
 
 ## results so far
 
@@ -53,7 +54,6 @@ ski physics on a rigid test sled vs closed form answers:
 - **pretrained body** (`skisim/sonic.py`, `skisim/sonic_torch.py`). gear-sonic's encoder and decoder wired to match its c++ deploy reference (50 hz, 10 frame history, isaaclab joint order), rebuilt in torch for batched gpu use. zero shot on skis it holds a straight run: 96 m on 8 deg, 93 m on 15 deg before falling.
 - **policy** (`train/ski_env.py`, `train/train.py`). frozen sonic underneath. the policy outputs a body lean target plus residual joint offsets (31 actions) from 141 observations: proprioception, ski touch, edge angles, terrain heights ahead, target heading and speed. mujoco warp runs 4096 robots on one h100 at about 63k robot steps per second.
 - **live** (`train/live.py`). runs the newest checkpoint in real time, pulls new ones every minute, steer by touch from a laptop or phone. `train/autoeval.py` scores and renders each checkpoint on the benchmark.
-- **policy api** (`policy_api/`). serves trained policies over http and an openpi-compatible websocket, so any physics loop can run them zero shot.
 
 ## layout
 
@@ -66,9 +66,9 @@ hikesim/                  hiking courses, planner, rough ground, training tiles,
 train/                    batched envs, ppo launchers (local + modal), live viewer, eval
 ground/                   phone recorder server, trail registration, photon imessage agent
 ios/GroundTruth/          ios app that records a hike in the background
-game/                     hazard intelligence browser game
-web/, api/                hazard intelligence site and commentator voice function
-presage-relay/            heart rate and breathing relay for the live game
+game/                     browser capture: webcam pose and vitals on real terrain
+web/, api/                site, api docs and tts function
+presage-relay/            heart rate and breathing relay for browser capture
 spacetime/, tools/        spacetimedb module and load/export tools
 policy_api/               serves trained policies
 assets/unitree_g1/        unitree g1 29 dof model (unitree_rl_mjlab, apache 2.0)
@@ -91,7 +91,7 @@ PYTHONPATH=. .venv-train/bin/python -m train.live --terrain out/terrains_v3     
 PYTHONPATH=. .venv-train/bin/python -m train.play --ckpt runs_live/<run>/model_<iter>.pt                          # benchmark + videos
 ```
 
-hiking: [HIKING.md](HIKING.md). the game: `scripts/dev.sh`, see [GAME.md](GAME.md). the phone recorder: [ground/README.md](ground/README.md).
+hiking: [HIKING.md](HIKING.md). browser capture: `scripts/dev.sh`, see [GAME.md](GAME.md). phone recorder: [ground/README.md](ground/README.md).
 
 ## data and licenses
 
