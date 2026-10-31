@@ -1,61 +1,81 @@
 # skibot
 
-Unitree G1 humanoids skiing real Olympic and World Cup pistes in MuJoCo. Type a resort name and the run's real slope becomes a MuJoCo heightfield. A pretrained whole body controller (NVIDIA GEAR-SONIC) keeps the robot moving like a person, and a small policy trained with PPO on thousands of parallel robots teaches it to ski: edge, carve through gates, hold speed and stay upright on terrain it has never seen. 
+data collection & rl envs for humanoid training. skiing and hiking.
 
-## MHacks 2026: Ground Truth
+tooling to collect human motion on real terrain and turn it into training envs for a unitree g1. the terrain is real (openstreetmap + elevation tiles + lidar), the body is a pretrained whole body controller (nvidia gear-sonic), and a small ppo policy on top learns the activity.
 
-The hackathon build on top of this repo, **Hazard Intelligence**: ski the real Streif in the browser with your body (webcam pose), with the Unitree G1 copying you, everyone live on one shared mountain through SpacetimeDB, every run adding to a shared motion-on-terrain dataset, your heart rate and breathing read from the same camera by Presage and pooled into a hazard map of where on the real terrain people's hearts race, an ElevenLabs race commentator, and an iMessage agent on Photon that hands out join codes and texts results. See [GAME.md](GAME.md) for what it looks like, how it plays and how to run it (`scripts/dev.sh`). The long version of the idea is in [VISION.md](VISION.md). Everything that is not code (maps, terrain, recordings, training inputs, the policy registry, organisations) lives in the same SpacetimeDB database; [DATABASE.md](DATABASE.md) says what is in it and how to read, load and publish it safely.
+## data collection
 
-## Results so far
+every recording is registered to the ground it happened on, so motion, terrain and vitals line up with the training envs.
 
-Fixed benchmark: 24 terrain tiles (real course windows and synthetic slopes, 8 to 31 degrees), 12 s per run.
+- **phone recorder** (`ground/`, `ios/GroundTruth/`). an iphone app records a hike in the background (100 hz motion, gps, barometer, steps) and uploads it. the server ties it to the trail under it: distance, climb, osm trail match, cadence, gaps. opt in and summaries go over imessage (photon agent). see [ground/README.md](ground/README.md).
+- **browser capture** (`game/`, `presage-relay/`). webcam pose in the browser on the real streif, retargeted onto the g1 live, many people at once on one shared course. each session stores human motion against real terrain, plus heart rate and breathing read from the same camera (presage), pooled into a hazard map of where on the terrain people's hearts race. live at [hazard-intelligence-seven.vercel.app](https://hazard-intelligence-seven.vercel.app). see [GAME.md](GAME.md).
+- **gopro runs** (`gopro.py`). gopro imu/gps ski runs (zenodo) matched to the terrain.
+- **race video** (`skisim/pose_from_video.py`). world cup giant slalom video to g1 joint targets for athletic posture.
+- **one database.** everything that isn't code (maps, terrain, recordings, training inputs, the policy registry) lives in one spacetimedb database. see [DATABASE.md](DATABASE.md).
 
-| | SONIC alone | Policy v1 (iter 900) | Policy v2 (iter 1325) |
+## training envs
+
+- **skiing** (`skisim/`, `train/`). ski physics mujoco can't do on its own, any resort as a course, perturbed terrain with a curriculum, 4096 robots on one h100.
+- **hiking** (`hikesim/`, `train/hike_*.py`). trails from usgs 1 m lidar, rocks and roots added, sonic's kinematic planner for steps. see [HIKING.md](HIKING.md).
+- **policy api** (`policy_api/`). serves trained policies over http and an openpi-compatible websocket, so any physics loop can run them zero shot.
+
+## results so far
+
+**skiing.** fixed benchmark: 24 terrain tiles (real course windows and synthetic slopes, 8 to 31 deg), 12 s per run.
+
+| | sonic alone | policy v1 (iter 900) | policy v2 (iter 1325) |
 |---|---|---|---|
-| Runs without a fall | 1 / 24 | 18 / 24 | 17 / 24 |
-| Mean distance | 11.4 m | 52.6 m | 81.9 m |
-| Heading error | 29.8 deg | 16.5 deg | 8.6 deg |
-| Ski alignment gap | | 31.2 deg | 3.1 deg |
-| A ski in the air | | 21% | 7% |
-| Stance width (hips about 0.24 m) | | 0.44 m | 0.27 m |
+| runs without a fall | 1 / 24 | 18 / 24 | 17 / 24 |
+| mean distance | 11.4 m | 52.6 m | 81.9 m |
+| heading error | 29.8 deg | 16.5 deg | 8.6 deg |
+| ski alignment gap | | 31.2 deg | 3.1 deg |
+| a ski in the air | | 21% | 7% |
+| stance width (hips about 0.24 m) | | 0.44 m | 0.27 m |
 
 v1 learned to stay up with crossed, scissored skis. v2 added parallel ski, both skis down, stance width and edge agreement rewards and fixed the look in about 250 iterations.
 
-Ski physics checks on a rigid test sled against closed form answers:
+ski physics on a rigid test sled vs closed form answers:
 
-| Check | Simulated | Expected |
+| check | simulated | expected |
 |---|---|---|
-| Straight glide, 15 deg, 8 s | 14.91 m/s | 14.90 m/s |
-| Carve radius at a 30 deg edge | 14.58 m | 14.72 m (sidecut x cos edge) |
-| Sideways skid from 5 m/s | stops in 2.00 s | 2.04 s |
-| Flat ski across a 20 deg slope, 2 s | slides 2.10 m | 2.10 m |
+| straight glide, 15 deg, 8 s | 14.91 m/s | 14.90 m/s |
+| carve radius at a 30 deg edge | 14.58 m | 14.72 m (sidecut x cos edge) |
+| sideways skid from 5 m/s | stops in 2.00 s | 2.04 s |
+| flat ski across a 20 deg slope, 2 s | slides 2.10 m | 2.10 m |
 
-## How it works
+**hiking.** sonic alone walks easy ground well and falls once a climb passes about 12 deg. the trained policy's benchmark isn't in yet.
 
-- **Ski physics** (`skisim/ski.py`, `ski_batch.py`, `ski_torch.py`). MuJoCo friction is the same in every direction, which cannot describe a ski. Each ski touches the snow through spring points along both edges, and the model adds glide friction along the ski, edge grip that grows with edge angle, and sidecut steering (an edged ski carves a radius of sidecut x cos(edge)). Six snow conditions (groomed, hardpack, ice, soft, slush, powder) change grip, glide and how far the skis sink. The numpy and torch versions match the reference to 1e-13 and 1.7e-4.
-- **Any resort** (`resort.py`, `course.py`). Resort name to Nominatim, piste lines from OpenStreetMap via Overpass, elevation from AWS Terrain Tiles, stitched into a 1.2 km course with giant slalom gates at G1 scale. 21 courses built so far, including Bormio Stelvio, Cortina Olimpia delle Tofane, Kitzbuehel Streif, Adelboden, Garmisch Kandahar, Val d'Isere Bellevarde, Beaver Creek Golden Eagle, Whistler, Jackson Hole, Zermatt and Hakuba.
-- **Terrain perturbation** (`skisim/perturb.py`). Windows cut along the real runs plus synthetic slopes, perturbed with pitch scale, side tilt, rolling bumps, moguls, rollers, jumps, compressions, chutes and flat stretches, packed side by side into one map for training with a difficulty curriculum. The steep bank has 128 tiles with mean slopes from 4.5 to 42 degrees.
-- **Pretrained body** (`skisim/sonic.py`, `skisim/sonic_torch.py`). GEAR-SONIC's encoder and decoder, wired to match its C++ deploy reference (50 Hz, 10 frame history, IsaacLab joint order), then rebuilt in torch for batched GPU use. Zero shot on skis it already holds a straight run: 96 m on 8 deg, 93 m on 15 deg before falling.
-- **Policy** (`train/ski_env.py`, `train/train.py`). Frozen SONIC underneath. The policy outputs a body lean target for SONIC plus residual joint offsets (31 actions) from 141 observations: proprioception, ski touch (pressure under the front and rear of each edge), edge angles, terrain heights ahead, and the target heading and speed. Episodes race alternating gates or follow free heading commands. MuJoCo Warp runs 4096 robots on one H100 at about 63k robot steps per second.
-- **Athletic posture from race video** (`skisim/pose_from_video.py`). MediaPipe 3D pose on World Cup giant slalom runs, filtered to skiing frames, turned into G1 joint targets for neutral, left turn and right turn stances. SONIC tracks that posture and blends between the turn shapes as the policy leans.
-- **Live** (`train/live.py`). A local server runs the newest checkpoint in real time, pulls new checkpoints from the training run every minute, and lets you steer by touch (gates mode or free steer) from a laptop or phone. `train/autoeval.py` scores and renders each new checkpoint on the benchmark.
+## how the ski env works
 
-## Layout
+- **ski physics** (`skisim/ski.py`, `ski_batch.py`, `ski_torch.py`). mujoco friction is the same in every direction, which can't describe a ski. each ski touches snow through spring points along both edges, with glide friction along the ski, edge grip that grows with edge angle, and sidecut steering (an edged ski carves sidecut x cos(edge)). six snow conditions (groomed, hardpack, ice, soft, slush, powder) change grip, glide and sink. numpy and torch versions match the reference to 1e-13 and 1.7e-4.
+- **any resort** (`resort.py`, `course.py`). resort name to nominatim, piste lines from openstreetmap via overpass, elevation from aws terrain tiles, stitched into a 1.2 km course with giant slalom gates at g1 scale. 21 courses so far, including bormio stelvio, cortina olimpia delle tofane, kitzbuehel streif, adelboden, garmisch kandahar, val d'isere bellevarde, beaver creek golden eagle, whistler, jackson hole, zermatt and hakuba.
+- **terrain perturbation** (`skisim/perturb.py`). windows cut along real runs plus synthetic slopes, perturbed with pitch scale, side tilt, bumps, moguls, rollers, jumps, compressions, chutes and flats, packed into one map with a difficulty curriculum. the steep bank has 128 tiles from 4.5 to 42 deg.
+- **pretrained body** (`skisim/sonic.py`, `skisim/sonic_torch.py`). gear-sonic's encoder and decoder wired to match its c++ deploy reference (50 hz, 10 frame history, isaaclab joint order), rebuilt in torch for batched gpu use. zero shot on skis it holds a straight run: 96 m on 8 deg, 93 m on 15 deg before falling.
+- **policy** (`train/ski_env.py`, `train/train.py`). frozen sonic underneath. the policy outputs a body lean target plus residual joint offsets (31 actions) from 141 observations: proprioception, ski touch, edge angles, terrain heights ahead, target heading and speed. mujoco warp runs 4096 robots on one h100 at about 63k robot steps per second.
+- **live** (`train/live.py`). runs the newest checkpoint in real time, pulls new ones every minute, steer by touch from a laptop or phone. `train/autoeval.py` scores and renders each checkpoint on the benchmark.
+
+## layout
 
 ```
-resort.py, course.py      any resort to a MuJoCo course (OSM + elevation)
-gopro.py                  GoPro IMU/GPS ski runs (Zenodo) matched to the terrain
-ground/                   Ground Truth: phone recorder server, trail registration, Photon iMessage agent (see ground/README.md)
-ios/GroundTruth/          iOS app that records a hike in the background and uploads it
-build_resorts.sh          builds a list of courses
-skisim/                   ski physics, terrain, scenes, SONIC, perturbation, fleet renders, pose from video
-skisim/tests/             physics and controller checks
-train/                    batched env, PPO launcher, Modal launcher, live viewer, eval and renders
-assets/unitree_g1/        Unitree G1 29 DoF model (from unitree_rl_mjlab, Apache 2.0)
-scripts/fetch_assets.sh   downloads SONIC weights (and optional data)
+resort.py, course.py      any resort to a mujoco course (osm + elevation)
+ground.py                 trails and lidar for a place (hiking)
+gopro.py                  gopro imu/gps ski runs matched to the terrain
+skisim/                   ski physics, terrain, scenes, sonic, perturbation, pose from video
+hikesim/                  hiking courses, planner, rough ground, training tiles, web viewer
+train/                    batched envs, ppo launchers (local + modal), live viewer, eval
+ground/                   phone recorder server, trail registration, photon imessage agent
+ios/GroundTruth/          ios app that records a hike in the background
+game/                     browser capture: webcam pose and vitals on real terrain
+web/, api/                site, api docs and tts function
+presage-relay/            heart rate and breathing relay for browser capture
+spacetime/, tools/        spacetimedb module and load/export tools
+policy_api/               serves trained policies
+assets/unitree_g1/        unitree g1 29 dof model (unitree_rl_mjlab, apache 2.0)
+scripts/                  asset fetch, dev server
 ```
 
-## Run it
+## run it
 
 ```bash
 uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python mujoco numpy scipy pillow requests onnxruntime joblib "mediapipe==0.10.14" opencv-python-headless
@@ -65,17 +85,19 @@ scripts/fetch_assets.sh
 .venv/bin/python -m skisim.tests.test_physics                        # ski physics checks
 .venv/bin/python resort.py "Bormio" --run stelvio                    # any resort to out/courses/<slug>
 .venv/bin/python -m skisim.perturb --n 128 --cols 8 --steep 1.5 --out out/terrains_v3
-PYTHONPATH=. .venv-train/bin/python -m train.train --device cpu --num-envs 16 --iters 2 --terrain out/terrains_v3   # CPU smoke test
-modal run --detach train/modal_train.py --num-envs 4096 --terrain out/terrains_v3                                  # H100 training
+PYTHONPATH=. .venv-train/bin/python -m train.train --device cpu --num-envs 16 --iters 2 --terrain out/terrains_v3   # cpu smoke test
+modal run --detach train/modal_train.py --num-envs 4096 --terrain out/terrains_v3                                  # h100 training
 PYTHONPATH=. .venv-train/bin/python -m train.live --terrain out/terrains_v3                                        # http://127.0.0.1:8766
 PYTHONPATH=. .venv-train/bin/python -m train.play --ckpt runs_live/<run>/model_<iter>.pt                          # benchmark + videos
 ```
 
-## Data and licenses
+hiking: [HIKING.md](HIKING.md). browser capture: `scripts/dev.sh`, see [GAME.md](GAME.md). phone recorder: [ground/README.md](ground/README.md).
 
-- Unitree G1 model and meshes: unitree_rl_mjlab, Apache 2.0 (`assets/unitree_g1/LICENSE`).
-- NVIDIA GEAR-SONIC weights: NVIDIA Open Model License, not stored here, fetched by `scripts/fetch_assets.sh`. Reference code: NVlabs/GR00T-WholeBodyControl, Apache 2.0.
-- Piste lines: OpenStreetMap contributors, ODbL. Elevation: AWS Terrain Tiles (Mapzen / Tilezen sources, attribution required).
-- GoPro ski runs on Marmolada: Prochazka, CC BY 4.0, doi:10.5281/zenodo.21777004 (optional, not stored here).
-- Race videos are not stored here. They are only used locally to measure posture.
-- MuJoCo, MuJoCo Warp, mjlab, rsl_rl and MediaPipe under their own licenses.
+## data and licenses
+
+- unitree g1 model and meshes: unitree_rl_mjlab, apache 2.0 (`assets/unitree_g1/LICENSE`).
+- nvidia gear-sonic weights and kinematic planner: nvidia open model license, not stored here, fetched by `scripts/fetch_assets.sh`. reference code: nvlabs/gr00t-wholebodycontrol, apache 2.0.
+- piste lines and trails: openstreetmap contributors, odbl. elevation: aws terrain tiles (mapzen / tilezen sources, attribution required) and usgs 3dep 1 m lidar (public domain). aerial photos: usda naip, public domain.
+- gopro ski runs on marmolada: prochazka, cc by 4.0, doi:10.5281/zenodo.21777004 (optional, not stored here).
+- race videos aren't stored here. they're only used locally to measure posture.
+- mujoco, mujoco warp, mjlab, rsl_rl and mediapipe under their own licenses.
